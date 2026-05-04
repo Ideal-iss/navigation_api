@@ -554,7 +554,7 @@
     <!-- API URL bar -->
     <div class="api-bar">
       <label>API</label>
-      <input type="text" id="apiUrl" value="http://localhost:8000" oninput="checkStatus()">
+      <input type="text" id="apiUrl" value="" oninput="checkStatus()">
       <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="checkStatus()">Проверить</button>
     </div>
 
@@ -977,7 +977,8 @@
     }
   }
 
-  // Старт
+  // Старт: берём текущий origin, убирая /admin
+  document.getElementById('apiUrl').value = window.location.origin;
   checkStatus();
 </script>
 </body>
