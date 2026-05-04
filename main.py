@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from database import init_db
+from database import init_db, reset_graph, get_db
 from routers import beacons, map, route, position
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -26,6 +26,13 @@ app.include_router(beacons.router)
 app.include_router(map.router)
 app.include_router(route.router)
 app.include_router(position.router)
+
+@app.post("/admin/reset-graph")
+def admin_reset_graph():
+    conn = get_db()
+    reset_graph(conn)
+    conn.close()
+    return {"ok": True, "message": "Граф навигации перезагружен"}
 
 @app.get("/")
 def root():
