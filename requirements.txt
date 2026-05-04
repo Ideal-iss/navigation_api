@@ -1,0 +1,6 @@
+cat > requirements.txt << 'EOF'
+fastapi
+uvicorn
+networkx
+aiofiles
+EOF

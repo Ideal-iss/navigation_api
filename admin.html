@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indoor Nav — Панель администратора</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Onest:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #13161e;
+    --surface2: #1a1e2a;
+    --border: #252a38;
+    --accent: #4f8ef7;
+    --accent2: #7c3aed;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --text: #e8eaf0;
+    --text2: #8b90a0;
+    --text3: #4a5060;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Onest', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    height: 60px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.5px;
+  }
+
+  .logo-icon {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+
+  .api-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text2);
+    font-family: var(--mono);
+  }
+
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--text3);
+    transition: background 0.3s;
+  }
+  .status-dot.online { background: var(--success); box-shadow: 0 0 8px var(--success); }
+  .status-dot.offline { background: var(--danger); }
+
+  /* Layout */
+  .layout {
+    display: flex;
+    flex: 1;
+  }
+
+  /* Sidebar */
+  aside {
+    width: 220px;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    padding: 20px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .nav-label {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    padding: 8px 12px 4px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text2);
+    transition: all 0.15s;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+  }
+
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: rgba(79,142,247,0.12); color: var(--accent); }
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+
+  /* Main */
+  main {
+    flex: 1;
+    padding: 32px;
+    overflow-y: auto;
+  }
+
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* Page header */
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+
+  .page-title {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+  }
+
+  .page-subtitle {
+    font-size: 13px;
+    color: var(--text2);
+    margin-top: 2px;
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+    font-family: var(--sans);
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: #6b9ef8; }
+
+  .btn-ghost {
+    background: var(--surface2);
+    color: var(--text2);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { color: var(--text); border-color: var(--text3); }
+
+  .btn-danger {
+    background: rgba(239,68,68,0.12);
+    color: var(--danger);
+    border: 1px solid rgba(239,68,68,0.2);
+  }
+  .btn-danger:hover { background: rgba(239,68,68,0.2); }
+
+  .btn-success {
+    background: rgba(34,197,94,0.12);
+    color: var(--success);
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+  .btn-success:hover { background: rgba(34,197,94,0.2); }
+
+  /* Stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-family: var(--mono);
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    font-family: var(--mono);
+    letter-spacing: -1px;
+  }
+
+  .stat-value.blue { color: var(--accent); }
+  .stat-value.green { color: var(--success); }
+  .stat-value.yellow { color: var(--warning); }
+  .stat-value.purple { color: #a78bfa; }
+
+  /* Table */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .search-input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 12px 7px 34px;
+    font-size: 13px;
+    color: var(--text);
+    font-family: var(--sans);
+    width: 220px;
+    position: relative;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-input:focus { border-color: var(--accent); }
+
+  .search-wrap { position: relative; }
+  .search-icon {
+    position: absolute;
+    left: 10px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--text3);
+    font-size: 13px;
+    pointer-events: none;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead th {
+    text-align: left;
+    padding: 10px 20px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    font-weight: 600;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--surface2); }
+
+  tbody td {
+    padding: 14px 20px;
+    vertical-align: middle;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-family: var(--mono);
+    font-weight: 600;
+  }
+
+  .badge-blue { background: rgba(79,142,247,0.12); color: var(--accent); }
+  .badge-green { background: rgba(34,197,94,0.12); color: var(--success); }
+  .badge-gray { background: var(--surface2); color: var(--text3); }
+
+  .mac-text {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text2);
+  }
+
+  .coord-text {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .coord-empty {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text3);
+  }
+
+  .actions { display: flex; gap: 6px; }
+
+  .btn-icon {
+    width: 30px; height: 30px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    color: var(--text2);
+    transition: all 0.15s;
+  }
+  .btn-icon:hover { background: var(--surface2); color: var(--text); }
+  .btn-icon.edit:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-icon.del:hover { border-color: var(--danger); color: var(--danger); }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    width: 460px;
+    transform: translateY(10px);
+    transition: transform 0.2s;
+  }
+  .modal-overlay.open .modal { transform: translateY(0); }
+
+  .modal-title {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .form-group { margin-bottom: 16px; }
+
+  .form-label {
+    display: block;
+    font-size: 12px;
+    color: var(--text2);
+    font-family: var(--mono);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .form-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 14px;
+    color: var(--text);
+    font-family: var(--sans);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-input:focus { border-color: var(--accent); }
+  .form-input[readonly] { color: var(--text2); cursor: default; }
+
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 24px;
+  }
+
+  /* Toast */
+  .toast-wrap {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    z-index: 300;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .toast {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: slideIn 0.2s ease;
+    min-width: 240px;
+  }
+
+  .toast.success { border-left: 3px solid var(--success); }
+  .toast.error { border-left: 3px solid var(--danger); }
+
+  @keyframes slideIn {
+    from { transform: translateX(20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* Empty state */
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text3);
+  }
+  .empty-icon { font-size: 36px; margin-bottom: 12px; }
+  .empty-text { font-size: 14px; }
+
+  /* Loading */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px;
+    color: var(--text3);
+    gap: 10px;
+    font-size: 13px;
+  }
+
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* API url bar */
+  .api-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 24px;
+  }
+
+  .api-bar label {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text3);
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .api-bar input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    font-size: 13px;
+    font-family: var(--mono);
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">📡</div>
+    IndoorNav Admin
+  </div>
+  <div class="api-status">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Проверка...</span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside>
+    <div class="nav-label">Навигация</div>
+    <button class="nav-item active" onclick="showPage('beacons', this)">
+      <span class="icon">📡</span> Маячки
+    </button>
+    <button class="nav-item" onclick="showPage('map', this)">
+      <span class="icon">🗺️</span> Карта
+    </button>
+    <div class="nav-label" style="margin-top:12px">Система</div>
+    <button class="nav-item" onclick="showPage('api', this)">
+      <span class="icon">⚡</span> API
+    </button>
+  </aside>
+
+  <main>
+
+    <!-- API URL bar -->
+    <div class="api-bar">
+      <label>API</label>
+      <input type="text" id="apiUrl" value="http://localhost:8000" oninput="checkStatus()">
+      <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="checkStatus()">Проверить</button>
+    </div>
+
+    <!-- Страница: Маячки -->
+    <div class="page active" id="page-beacons">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Маячки</div>
+          <div class="page-subtitle">Управление BLE-маячками Holy-IOT</div>
+        </div>
+        <div style="display:flex;gap:8px"><button class="btn btn-ghost" onclick="openAdd()">+ Добавить</button><button class="btn btn-primary" onclick="loadBeacons()">↻ Обновить</button></div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Всего</div>
+          <div class="stat-value blue" id="statTotal">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">С координатами</div>
+          <div class="stat-value green" id="statMapped">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Без координат</div>
+          <div class="stat-value yellow" id="statUnmapped">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Этажей</div>
+          <div class="stat-value purple" id="statFloors">—</div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <div class="table-toolbar">
+          <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-input" placeholder="Поиск маячка..." oninput="filterBeacons(this.value)">
+          </div>
+        </div>
+        <div id="beaconsTable">
+          <div class="loading"><div class="spinner"></div> Загрузка...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Страница: Карта -->
+    <div class="page" id="page-map">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Карта</div>
+          <div class="page-subtitle">План помещения</div>
+        </div>
+        <button class="btn btn-primary" onclick="loadMap()">↻ Загрузить</button>
+      </div>
+      <div class="table-wrap" style="padding:24px">
+        <div id="mapContent">
+          <div class="empty">
+            <div class="empty-icon">🗺️</div>
+            <div class="empty-text">Нажмите "Загрузить" для получения плана</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Страница: API -->
+    <div class="page" id="page-api">
+      <div class="page-header">
+        <div>
+          <div class="page-title">API Endpoints</div>
+          <div class="page-subtitle">Доступные методы сервера</div>
+        </div>
+        <a href="" id="swaggerLink" target="_blank" class="btn btn-primary">Открыть Swagger ↗</a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Метод</th>
+              <th>Endpoint</th>
+              <th>Описание</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="badge badge-green">GET</span></td><td class="mac-text">/beacons</td><td>Список всех маячков</td></tr>
+            <tr><td><span class="badge badge-green">GET</span></td><td class="mac-text">/beacons/{minor}</td><td>Данные маячка</td></tr>
+            <tr><td><span class="badge badge-blue">PATCH</span></td><td class="mac-text">/beacons/{minor}</td><td>Обновить данные маячка</td></tr>
+            <tr><td><span class="badge badge-green">GET</span></td><td class="mac-text">/map/{floor}</td><td>План этажа</td></tr>
+            <tr><td><span class="badge badge-blue">POST</span></td><td class="mac-text">/route</td><td>Построить маршрут</td></tr><tr><td><span class="badge badge-green">POST</span></td><td class="mac-text">/beacons//</td><td>Добавить маячок</td></tr><tr><td><span class="badge badge-danger" style="background:rgba(239,68,68,0.12);color:var(--danger)">DELETE</span></td><td class="mac-text">/beacons/{minor}</td><td>Удалить маячок</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Modal: Edit Beacon -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-title">✏️ Редактировать маячок</div>
+    <input type="hidden" id="editMinor">
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Minor</label>
+        <input class="form-input" id="showMinor" readonly>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Major</label>
+        <input class="form-input" id="showMajor" readonly>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">MAC адрес</label>
+      <input class="form-input" id="showMac" readonly>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Название места</label>
+      <input class="form-input" id="editName" placeholder="Например: Вход в корпус А">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">X (метры)</label>
+        <input class="form-input" id="editX" type="number" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Y (метры)</label>
+        <input class="form-input" id="editY" type="number" step="0.01" placeholder="0.00">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Этаж</label>
+        <input class="form-input" id="editFloor" type="number" placeholder="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label">TX Power (dBm)</label>
+        <input class="form-input" id="editTxPower" type="number" placeholder="-55">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveBeacon()">💾 Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toasts -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+  let allBeacons = [];
+
+  function getApiUrl() {
+    return document.getElementById('apiUrl').value.replace(/\/$/, '');
+  }
+
+  // Навигация
+  function showPage(name, btn) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    btn.classList.add('active');
+    if (name === 'beacons') loadBeacons();
+    if (name === 'map') loadMap();
+    if (name === 'api') updateSwaggerLink();
+  }
+
+  // Статус API
+  async function checkStatus() {
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    try {
+      const r = await fetch(getApiUrl() + '/');
+      if (r.ok) {
+        dot.className = 'status-dot online';
+        txt.textContent = 'API online';
+        loadBeacons();
+      } else throw new Error();
+    } catch {
+      dot.className = 'status-dot offline';
+      txt.textContent = 'Нет соединения';
+    }
+  }
+
+  // Загрузка маячков
+  async function loadBeacons() {
+    document.getElementById('beaconsTable').innerHTML =
+      '<div class="loading"><div class="spinner"></div> Загрузка...</div>';
+    try {
+      const r = await fetch(getApiUrl() + '/beacons/');
+      allBeacons = await r.json();
+      renderBeacons(allBeacons);
+      updateStats(allBeacons);
+    } catch {
+      document.getElementById('beaconsTable').innerHTML =
+        '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Не удалось подключиться к API</div></div>';
+    }
+  }
+
+  function updateStats(beacons) {
+    document.getElementById('statTotal').textContent = beacons.length;
+    const mapped = beacons.filter(b => b.x !== 0 || b.y !== 0).length;
+    document.getElementById('statMapped').textContent = mapped;
+    document.getElementById('statUnmapped').textContent = beacons.length - mapped;
+    const floors = new Set(beacons.map(b => b.floor)).size;
+    document.getElementById('statFloors').textContent = floors;
+  }
+
+  function filterBeacons(q) {
+    const filtered = allBeacons.filter(b =>
+      b.name.toLowerCase().includes(q.toLowerCase()) ||
+      String(b.minor).includes(q) ||
+      b.mac.toLowerCase().includes(q.toLowerCase())
+    );
+    renderBeacons(filtered);
+  }
+
+  function renderBeacons(beacons) {
+    if (!beacons.length) {
+      document.getElementById('beaconsTable').innerHTML =
+        '<div class="empty"><div class="empty-icon">📡</div><div class="empty-text">Маячки не найдены</div></div>';
+      return;
+    }
+
+    const rows = beacons.map(b => {
+      const hasCords = b.x !== 0 || b.y !== 0;
+      const coordStr = hasCords
+        ? `<span class="coord-text">${b.x.toFixed(2)}, ${b.y.toFixed(2)}</span>`
+        : `<span class="coord-empty">не задано</span>`;
+      return `
+        <tr>
+          <td>
+            <div style="font-weight:500">${b.name}</div>
+            <div class="mac-text">${b.mac}</div>
+          </td>
+          <td><span class="badge badge-blue" style="font-family:var(--mono)">${b.minor}</span></td>
+          <td><span class="badge badge-gray">${b.major}</span></td>
+          <td>${coordStr}</td>
+          <td><span class="badge ${hasCords ? 'badge-green' : 'badge-gray'}">Этаж ${b.floor}</span></td>
+          <td><span class="mac-text">${b.tx_power} dBm</span></td>
+          <td>
+            <div class="actions">
+              <button class="btn-icon edit" onclick='openEdit(${JSON.stringify(b)})' title="Редактировать">✏️</button><button class="btn-icon del" onclick='deleteBeacon(${b.minor})' title="Удалить">🗑️</button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('beaconsTable').innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Название / MAC</th>
+            <th>Minor</th>
+            <th>Major</th>
+            <th>Координаты (м)</th>
+            <th>Этаж</th>
+            <th>TX Power</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  // Modal
+  function openEdit(beacon) {
+    document.getElementById('editMinor').value = beacon.minor;
+    document.getElementById('showMinor').value = beacon.minor;
+    document.getElementById('showMajor').value = beacon.major;
+    document.getElementById('showMac').value = beacon.mac;
+    document.getElementById('editName').value = beacon.name;
+    document.getElementById('editX').value = beacon.x;
+    document.getElementById('editY').value = beacon.y;
+    document.getElementById('editFloor').value = beacon.floor;
+    document.getElementById('editTxPower').value = beacon.tx_power;
+    document.getElementById('editModal').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('editModal').classList.remove('open');
+  }
+
+  async function saveBeacon() {
+    const isNew = !document.getElementById('editMinor').value;
+    const minor = isNew
+      ? document.getElementById('showMinor').value
+      : document.getElementById('editMinor').value;
+
+    const body = isNew ? {
+      minor:    parseInt(document.getElementById('showMinor').value),
+      major:    parseInt(document.getElementById('showMajor').value),
+      mac:      document.getElementById('showMac').value,
+      name:     document.getElementById('editName').value,
+      x:        parseFloat(document.getElementById('editX').value),
+      y:        parseFloat(document.getElementById('editY').value),
+      floor:    parseInt(document.getElementById('editFloor').value),
+      tx_power: parseInt(document.getElementById('editTxPower').value),
+    } : {
+      name:     document.getElementById('editName').value,
+      x:        parseFloat(document.getElementById('editX').value),
+      y:        parseFloat(document.getElementById('editY').value),
+      floor:    parseInt(document.getElementById('editFloor').value),
+      tx_power: parseInt(document.getElementById('editTxPower').value),
+    };
+
+    const url = isNew ? getApiUrl() + '/beacons/' : getApiUrl() + '/beacons/' + minor;
+    const method = isNew ? 'POST' : 'PATCH';
+
+    try {
+      const r = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (r.ok) {
+        closeModal();
+        // Сбросить поля обратно в readonly
+        document.getElementById('showMinor').setAttribute('readonly', true);
+        document.getElementById('showMajor').setAttribute('readonly', true);
+        document.getElementById('showMac').setAttribute('readonly', true);
+        document.querySelector('.modal-title').textContent = '✏️ Редактировать маячок';
+        showToast('success', isNew ? '✓ Маячок добавлен' : '✓ Маячок обновлён');
+        loadBeacons();
+      } else {
+        showToast('error', '✗ Ошибка сохранения');
+      }
+    } catch {
+      showToast('error', '✗ Нет соединения с API');
+    }
+  }
+
+  // Карта
+  async function loadMap() {
+    document.getElementById('mapContent').innerHTML =
+      '<div class="loading"><div class="spinner"></div> Загрузка плана...</div>';
+    try {
+      const r = await fetch(getApiUrl() + '/map/1');
+      const plan = await r.json();
+      document.getElementById('mapContent').innerHTML = `
+        <div style="margin-bottom:16px;font-family:var(--mono);font-size:12px;color:var(--text2)">
+          Размер: ${plan.width} × ${plan.height} м · ${plan.rooms.length} помещений
+        </div>
+        <div style="overflow-x:auto">
+          <table><thead><tr>
+            <th>Помещение</th><th>X</th><th>Y</th><th>Ширина</th><th>Высота</th>
+          </tr></thead><tbody>
+          ${plan.rooms.map(r => `<tr>
+            <td><b>${r.name}</b></td>
+            <td class="mac-text">${r.x}</td>
+            <td class="mac-text">${r.y}</td>
+            <td class="mac-text">${r.w} м</td>
+            <td class="mac-text">${r.h} м</td>
+          </tr>`).join('')}
+          </tbody></table>
+        </div>`;
+    } catch {
+      document.getElementById('mapContent').innerHTML =
+        '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Не удалось загрузить карту</div></div>';
+    }
+  }
+
+  function updateSwaggerLink() {
+    document.getElementById('swaggerLink').href = getApiUrl() + '/docs';
+  }
+
+  // Toast
+  function showToast(type, msg) {
+    const wrap = document.getElementById('toastWrap');
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = msg;
+    wrap.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  // Закрыть модал по клику вне
+  document.getElementById('editModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+
+  // Добавление маячка
+  function openAdd() {
+    document.getElementById('editMinor').value = '';
+    document.getElementById('showMinor').value = '';
+    document.getElementById('showMajor').value = '';
+    document.getElementById('showMac').value = '';
+    document.getElementById('editName').value = '';
+    document.getElementById('editX').value = '0';
+    document.getElementById('editY').value = '0';
+    document.getElementById('editFloor').value = '1';
+    document.getElementById('editTxPower').value = '-55';
+    document.querySelector('.modal-title').textContent = '➕ Добавить маячок';
+    document.getElementById('showMinor').removeAttribute('readonly');
+    document.getElementById('showMajor').removeAttribute('readonly');
+    document.getElementById('showMac').removeAttribute('readonly');
+    document.getElementById('editModal').classList.add('open');
+  }
+
+  // Удаление маячка
+  async function deleteBeacon(minor) {
+    if (!confirm(`Удалить маячок ${minor}?`)) return;
+    try {
+      const r = await fetch(getApiUrl() + '/beacons/' + minor, { method: 'DELETE' });
+      if (r.ok) {
+        showToast('success', `✓ Маячок ${minor} удалён`);
+        loadBeacons();
+      } else {
+        showToast('error', '✗ Ошибка удаления');
+      }
+    } catch {
+      showToast('error', '✗ Нет соединения с API');
+    }
+  }
+
+  // Старт
+  checkStatus();
+</script>
+</body>
+</html>
