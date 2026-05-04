@@ -45,3 +45,10 @@ class RouteRequest(BaseModel):
 class RouteOut(BaseModel):
     nodes:          list[str]
     total_distance: float
+
+class NodeOut(BaseModel):
+    id:    str
+    name:  str
+    x:     float
+    y:     float
+    floor: int

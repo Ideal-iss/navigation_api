@@ -1,9 +1,16 @@
 from fastapi import APIRouter, HTTPException
 from database import get_db
-from models import RouteRequest, RouteOut
+from models import RouteRequest, RouteOut, NodeOut
 from pathfinding import build_graph, find_route
 
 router = APIRouter(prefix="/route", tags=["route"])
+
+@router.get("/nodes/", response_model=list[NodeOut])
+def get_nodes(floor: int = 1):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM nodes WHERE floor=?", (floor,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 @router.post("/", response_model=RouteOut)
 def get_route(req: RouteRequest):
