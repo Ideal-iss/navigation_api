@@ -7,7 +7,7 @@ router = APIRouter(prefix="/beacons", tags=["beacons"])
 @router.get("/", response_model=list[BeaconOut])
 def get_beacons(floor: int = None):
     conn = get_db()
-    if floor:
+    if floor is not None:  # этаж 0 — валиден, поэтому сравниваем с None
         rows = conn.execute("SELECT * FROM beacons WHERE floor=?", (floor,)).fetchall()
     else:
         rows = conn.execute("SELECT * FROM beacons").fetchall()

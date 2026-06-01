@@ -30,12 +30,19 @@ class BeaconOut(BaseModel):
 
 class PositionRequest(BaseModel):
     readings: dict[int, int]
+    # Дополнительные (необязательные) параметры — обратно совместимо.
+    path_loss_n: Optional[float] = None  # показатель затухания среды
+    smoothing:   Optional[bool]  = None  # сглаживание RSSI (EMA)
 
 class PositionOut(BaseModel):
     x:        float
     y:        float
     floor:    int
     accuracy: float
+    # Новые поля — аддитивны, старые клиенты их просто игнорируют.
+    method:      Optional[str]   = None  # использованный метод позиционирования
+    num_beacons: Optional[int]   = None  # сколько маячков участвовало
+    uncertainty: Optional[float] = None  # оценка неопределённости, м
 
 class RouteRequest(BaseModel):
     from_node: str

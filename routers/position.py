@@ -1,38 +1,47 @@
 from fastapi import APIRouter, HTTPException
 from database import get_db
 from models import PositionRequest, PositionOut
+from positioning import estimate_position, DEFAULT_PATH_LOSS_N
 
 router = APIRouter(prefix="/position", tags=["position"])
 
+
 @router.post("/", response_model=PositionOut)
 def get_position(req: PositionRequest):
+    """
+    Определение позиции по RSSI маячков.
+
+    Метод: лог-дистанционная модель затухания (RSSI->расстояние) + мультилатерация
+    методом наименьших квадратов при >=3 видимых маячках. При <3 маячках
+    используется взвешенный центроид (запасной вариант). RSSI сглаживается
+    EMA-фильтром для уменьшения дрожания. Возвращается оценка неопределённости.
+
+    Формат запроса/ответа обратно совместим: добавлены только необязательные поля.
+    """
     if not req.readings:
         raise HTTPException(400, "Нет показаний маячков")
 
     conn = get_db()
-    points = []
-    for minor, rssi in req.readings.items():
+    beacons = []
+    for minor in req.readings.keys():
         row = conn.execute("SELECT * FROM beacons WHERE minor=?", (minor,)).fetchone()
         if row:
-            b = dict(row)
-            ratio = (b["tx_power"] - rssi) / (10.0 * 2.0)
-            distance = max(10.0 ** ratio, 0.1)
-            points.append((b["x"], b["y"], b["floor"], distance))
+            beacons.append(dict(row))
     conn.close()
 
-    if not points:
+    if not beacons:
         raise HTTPException(404, "Маячки не найдены в базе данных")
 
-    # Weighted centroid: weight = 1/d^2
-    weights = [1.0 / (d ** 2) for _, _, _, d in points]
-    total = sum(weights)
-    x = sum(w * px for w, (px, _, _, _) in zip(weights, points)) / total
-    y = sum(w * py for w, (_, py, _, _) in zip(weights, points)) / total
+    n = req.path_loss_n if req.path_loss_n is not None else DEFAULT_PATH_LOSS_N
+    smoothing = True if req.smoothing is None else req.smoothing
 
-    # Floor: этаж ближайшего маячка
-    floor = min(points, key=lambda p: p[3])[2]
+    result = estimate_position(
+        beacons=beacons,
+        readings=req.readings,
+        path_loss_n=n,
+        smoothing=smoothing,
+    )
+    if result is None:
+        raise HTTPException(404, "Маячки не найдены в базе данных")
 
-    # Accuracy: взвешенное среднее расстояние (чем меньше — тем точнее)
-    accuracy = sum(w * d for w, (_, _, _, d) in zip(weights, points)) / total
-
-    return PositionOut(x=round(x, 2), y=round(y, 2), floor=floor, accuracy=round(accuracy, 2))
+    return PositionOut(**result)

@@ -15,16 +15,21 @@ def get_nodes(floor: int = 1):
 @router.post("/", response_model=RouteOut)
 def get_route(req: RouteRequest):
     conn = get_db()
-    nodes = conn.execute(
+    # Загружаем ВСЕ узлы и рёбра: маршрут может проходить через несколько этажей
+    # (через лестницы/лифты, заданные рёбрами). Раньше брался один этаж, а рёбра —
+    # все подряд, из-за чего рёбра соседних этажей ломали граф.
+    all_nodes = conn.execute("SELECT * FROM nodes").fetchall()
+    floor_nodes = conn.execute(
         "SELECT * FROM nodes WHERE floor=?", (req.floor,)
     ).fetchall()
     edges = conn.execute("SELECT * FROM edges").fetchall()
     conn.close()
 
-    if not nodes:
+    if not floor_nodes:
         raise HTTPException(404, "Граф для этого этажа не найден")
 
-    G = build_graph(nodes, edges)
+    # Полный граф (все этажи); build_graph добавит только корректные рёбра.
+    G = build_graph(all_nodes, edges)
 
     try:
         path, dist = find_route(G, req.from_node, req.to_node)
