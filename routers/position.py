@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from database import get_db
+from database import db_session
 from models import PositionRequest, PositionOut
 from positioning import estimate_position, DEFAULT_PATH_LOSS_N
 
@@ -21,13 +21,13 @@ def get_position(req: PositionRequest):
     if not req.readings:
         raise HTTPException(400, "Нет показаний маячков")
 
-    conn = get_db()
-    beacons = []
-    for minor in req.readings.keys():
-        row = conn.execute("SELECT * FROM beacons WHERE minor=?", (minor,)).fetchone()
-        if row:
-            beacons.append(dict(row))
-    conn.close()
+    minors = list(req.readings.keys())
+    placeholders = ",".join("?" * len(minors))
+    with db_session() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM beacons WHERE minor IN ({placeholders})", minors
+        ).fetchall()
+    beacons = [dict(r) for r in rows]
 
     if not beacons:
         raise HTTPException(404, "Маячки не найдены в базе данных")

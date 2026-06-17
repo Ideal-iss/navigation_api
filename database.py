@@ -1,5 +1,5 @@
 import sqlite3
-import json
+from contextlib import contextmanager
 
 DB_PATH = "navigation.db"
 
@@ -7,6 +7,21 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+@contextmanager
+def db_session():
+    """
+    Соединение с БД с гарантированным закрытием (даже при исключении).
+
+    Использование:
+        with db_session() as conn:
+            conn.execute(...)
+    """
+    conn = get_db()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 def init_db():
     conn = get_db()

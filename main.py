@@ -1,12 +1,18 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from database import init_db, reset_graph, get_db
+from database import init_db, reset_graph, db_session
 from routers import beacons, map, route, position
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 
-app = FastAPI(title="Indoor Navigation API", version="1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()  # инициализация БД при старте (заменяет устаревший on_event)
+    yield
+
+
+app = FastAPI(title="Indoor Navigation API", version="1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,13 +20,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 @app.get("/admin")
 def admin():
     return FileResponse("admin.html")
-    
-@app.on_event("startup")
-def startup():
-    init_db()
 
 app.include_router(beacons.router)
 app.include_router(map.router)
@@ -29,9 +32,8 @@ app.include_router(position.router)
 
 @app.post("/admin/reset-graph")
 def admin_reset_graph():
-    conn = get_db()
-    reset_graph(conn)
-    conn.close()
+    with db_session() as conn:
+        reset_graph(conn)
     return {"ok": True, "message": "Граф навигации перезагружен"}
 
 @app.get("/")

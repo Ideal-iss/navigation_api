@@ -70,8 +70,10 @@ def weighted_centroid(points: List[Tuple[float, float, float]]
     points: список (x, y, distance).
     Возвращает (x, y, оценка_точности).
     """
+    # rssi_to_distance гарантирует d >= 0.1, поэтому деления на ноль не будет,
+    # но total может быть очень мал — на всякий случай защищаемся.
     weights = [1.0 / (d ** 2) for _, _, d in points]
-    total = sum(weights)
+    total = sum(weights) or 1e-9
     x = sum(w * px for w, (px, _, _) in zip(weights, points)) / total
     y = sum(w * py for w, (_, py, _) in zip(weights, points)) / total
     # Грубая оценка точности — взвешенное среднее расстояние.
@@ -157,9 +159,12 @@ def estimate_position(
         floor_w[fl] = floor_w.get(fl, 0.0) + 1.0 / (d ** 2)
     floor = max(floor_w, key=floor_w.get)
 
-    xy = [(x, y, d) for (x, y, d, _) in pts]
+    # Координаты считаем ТОЛЬКО по маячкам выбранного этажа: маячки соседних
+    # этажей живут в той же системе координат (x, y) и иначе искажали бы
+    # мультилатерацию, «притягивая» решение к чужому этажу.
+    xy = [(x, y, d) for (x, y, d, fl) in pts if fl == floor]
 
-    if len(pts) >= 3 and _HAS_NUMPY:
+    if len(xy) >= 3 and _HAS_NUMPY:
         try:
             x, y, uncertainty = multilaterate_lsq(xy)
             method = "lsq_multilateration"
@@ -176,6 +181,6 @@ def estimate_position(
         "floor": floor,
         "accuracy": round(uncertainty, 2),
         "method": method,
-        "num_beacons": len(pts),
+        "num_beacons": len(xy),
         "uncertainty": round(uncertainty, 2),
     }
