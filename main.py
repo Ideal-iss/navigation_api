@@ -5,6 +5,8 @@ from database import init_db, reset_graph, db_session
 from routers import beacons, map, route, position
 from fastapi.responses import FileResponse
 
+API_VERSION = "1.1"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -12,7 +14,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Indoor Navigation API", version="1.0", lifespan=lifespan)
+app = FastAPI(title="Indoor Navigation API", version=API_VERSION, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,4 +40,17 @@ def admin_reset_graph():
 
 @app.get("/")
 def root():
-    return {"status": "ok", "version": "1.0"}
+    return {"status": "ok", "version": API_VERSION}
+
+@app.get("/health")
+def health():
+    """Состояние сервиса и наполнение БД — для мониторинга и диагностики."""
+    with db_session() as conn:
+        beacons_n = conn.execute("SELECT COUNT(*) FROM beacons").fetchone()[0]
+        nodes_n   = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+        edges_n   = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+    return {
+        "status":  "ok",
+        "version": API_VERSION,
+        "db": {"beacons": beacons_n, "nodes": nodes_n, "edges": edges_n},
+    }

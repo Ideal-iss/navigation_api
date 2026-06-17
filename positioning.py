@@ -11,6 +11,7 @@
 """
 from typing import Dict, List, Tuple, Optional
 import math
+import time
 
 try:
     import numpy as np
@@ -24,10 +25,13 @@ except Exception:  # pragma: no cover - numpy указан в requirements
 # RSSI@1m берётся из поля beacon.tx_power (измеренный RSSI на расстоянии 1 м).
 DEFAULT_PATH_LOSS_N = 2.5
 DEFAULT_EMA_ALPHA = 0.4  # вес нового замера; меньше => сильнее сглаживание
+SESSION_TTL = 120.0      # сек: через сколько забываем неактивную сессию
 
-# Состояние EMA-фильтра по каждому маячку (minor -> сглаженный RSSI).
-# Эндпоинт без состояния, поэтому фильтр живёт на уровне модуля между запросами.
-_ema_state: Dict[int, float] = {}
+# Состояние EMA-фильтра, разделённое ПО СЕССИЯМ: (session_id, minor) -> (rssi, ts).
+# Раньше состояние было глобальным по minor — RSSI разных устройств для одного
+# маячка смешивались, искажая позицию на многопользовательском сервере.
+# Теперь у каждого клиента своя сессия; неактивные сессии вычищаются по TTL.
+_ema_state: Dict[Tuple[str, int], Tuple[float, float]] = {}
 
 
 def reset_filters() -> None:
@@ -35,16 +39,27 @@ def reset_filters() -> None:
     _ema_state.clear()
 
 
-def smooth_rssi(minor: int, rssi: float, alpha: float = DEFAULT_EMA_ALPHA) -> float:
-    """
-    Экспоненциальное скользящее среднее RSSI по каждому маячку.
+def _purge_stale(now: float) -> None:
+    """Удалить записи сессий, не обновлявшиеся дольше SESSION_TTL."""
+    stale = [k for k, (_, ts) in _ema_state.items() if now - ts > SESSION_TTL]
+    for k in stale:
+        del _ema_state[k]
 
-    Снижает дрожание (jitter) измерений между последовательными запросами.
-    s_t = alpha * rssi + (1 - alpha) * s_{t-1}.
+
+def smooth_rssi(session_id: str, minor: int, rssi: float,
+                alpha: float = DEFAULT_EMA_ALPHA, now: Optional[float] = None) -> float:
     """
-    prev = _ema_state.get(minor)
-    s = rssi if prev is None else alpha * rssi + (1.0 - alpha) * prev
-    _ema_state[minor] = s
+    Экспоненциальное скользящее среднее RSSI по каждому маячку в рамках сессии.
+
+    Снижает дрожание (jitter) измерений между последовательными запросами одного
+    клиента. s_t = alpha * rssi + (1 - alpha) * s_{t-1}.
+    """
+    if now is None:
+        now = time.time()
+    key = (session_id, minor)
+    prev = _ema_state.get(key)
+    s = rssi if prev is None else alpha * rssi + (1.0 - alpha) * prev[0]
+    _ema_state[key] = (s, now)
     return s
 
 
@@ -125,28 +140,37 @@ def estimate_position(
     path_loss_n: float = DEFAULT_PATH_LOSS_N,
     smoothing: bool = True,
     ema_alpha: float = DEFAULT_EMA_ALPHA,
+    session_id: Optional[str] = None,
 ) -> dict:
     """
     Главная функция позиционирования.
 
-    beacons  — записи маячков из БД (dict с x, y, floor, tx_power, minor).
-    readings — {minor: rssi}.
+    beacons    — записи маячков из БД (dict с x, y, floor, tx_power, minor).
+    readings   — {minor: rssi}.
+    session_id — идентификатор клиента для пер-сессионного EMA-сглаживания.
+                 Если не задан, межзапросное сглаживание не применяется
+                 (чтобы не смешивать RSSI разных устройств); клиент при этом
+                 может сглаживать на своей стороне.
 
     Алгоритм:
-      1) сглаживаем RSSI (EMA), если включено;
+      1) сглаживаем RSSI (EMA) в рамках сессии, если включено и есть session_id;
       2) переводим RSSI в расстояние лог-дистанционной моделью;
       3) при >=3 маячках — мультилатерация МНК, иначе — взвешенный центроид;
       4) этаж — по большинству среди ближайших маячков.
 
     Возвращает dict: x, y, floor, accuracy, method, num_beacons, uncertainty.
     """
+    now = time.time()
+    _purge_stale(now)
+    use_smoothing = smoothing and session_id is not None
+
     by_minor = {b["minor"]: b for b in beacons}
     pts: List[Tuple[float, float, float, int]] = []  # x, y, distance, floor
     for minor, rssi in readings.items():
         b = by_minor.get(minor)
         if not b:
             continue
-        r = smooth_rssi(minor, rssi, ema_alpha) if smoothing else float(rssi)
+        r = smooth_rssi(session_id, minor, rssi, ema_alpha, now) if use_smoothing else float(rssi)
         d = rssi_to_distance(r, b["tx_power"], path_loss_n)
         pts.append((b["x"], b["y"], d, b["floor"]))
 

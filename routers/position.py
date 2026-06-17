@@ -40,6 +40,7 @@ def get_position(req: PositionRequest):
         readings=req.readings,
         path_loss_n=n,
         smoothing=smoothing,
+        session_id=req.session_id,
     )
     if result is None:
         raise HTTPException(404, "Маячки не найдены в базе данных")

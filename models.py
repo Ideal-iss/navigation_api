@@ -33,6 +33,7 @@ class PositionRequest(BaseModel):
     # Дополнительные (необязательные) параметры — обратно совместимо.
     path_loss_n: Optional[float] = None  # показатель затухания среды
     smoothing:   Optional[bool]  = None  # сглаживание RSSI (EMA)
+    session_id:  Optional[str]   = None  # клиент/сессия для пер-сессионного EMA
 
 class PositionOut(BaseModel):
     x:        float
@@ -59,3 +60,28 @@ class NodeOut(BaseModel):
     x:     float
     y:     float
     floor: int
+
+class NodeCreate(BaseModel):
+    id:    str
+    name:  str
+    x:     float = 0.0
+    y:     float = 0.0
+    floor: int   = 1
+
+class NodeUpdate(BaseModel):
+    name:  Optional[str]   = None
+    x:     Optional[float] = None
+    y:     Optional[float] = None
+    floor: Optional[int]   = None
+
+class EdgeCreate(BaseModel):
+    from_id: str
+    to_id:   str
+    # weight необязателен: если не задан, считается по координатам узлов.
+    weight:  Optional[float] = None
+
+class EdgeOut(BaseModel):
+    id:      int
+    from_id: str
+    to_id:   str
+    weight:  float
