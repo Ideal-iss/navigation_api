@@ -543,6 +543,9 @@
     <button class="nav-item" onclick="showPage('map', this)">
       <span class="icon">🗺️</span> Карта
     </button>
+    <button class="nav-item" id="navGraph" onclick="showPage('graph', this)">
+      <span class="icon">🕸️</span> Граф
+    </button>
     <div class="nav-label" style="margin-top:12px">Система</div>
     <button class="nav-item" onclick="showPage('api', this)">
       <span class="icon">⚡</span> API
@@ -614,6 +617,44 @@
           <div class="empty">
             <div class="empty-icon">🗺️</div>
             <div class="empty-text">Нажмите "Загрузить" для получения плана</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Страница: Граф -->
+    <div class="page" id="page-graph">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Граф навигации</div>
+          <div class="page-subtitle">Узлы и рёбра поверх плана — визуализация и редактор</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:11px;font-family:var(--mono);color:var(--text3)">ЭТАЖ</label>
+          <input class="form-input" id="graphFloor" type="number" value="1"
+                 style="width:64px;padding:6px 10px" onchange="loadGraph()">
+          <button class="btn btn-primary" onclick="loadGraph()">↻ Загрузить</button>
+        </div>
+      </div>
+
+      <!-- Панель инструментов редактора -->
+      <div class="api-bar" style="gap:8px;flex-wrap:wrap">
+        <label>РЕЖИМ</label>
+        <button class="btn btn-ghost" id="gmode-view"    onclick="setGraphMode('view')">👁 Просмотр</button>
+        <button class="btn btn-ghost" id="gmode-add"     onclick="setGraphMode('add')">➕ Узел</button>
+        <button class="btn btn-ghost" id="gmode-connect" onclick="setGraphMode('connect')">🔗 Связать</button>
+        <button class="btn btn-ghost" id="gmode-delete"  onclick="setGraphMode('delete')">🗑️ Удалить</button>
+        <span id="graphHint" style="font-size:12px;color:var(--text2);margin-left:8px"></span>
+      </div>
+
+      <!-- Диагностика связности -->
+      <div id="graphDiag" style="margin-bottom:16px"></div>
+
+      <div class="table-wrap" style="padding:24px">
+        <div id="graphContent">
+          <div class="empty">
+            <div class="empty-icon">🕸️</div>
+            <div class="empty-text">Нажмите "Загрузить" для построения графа</div>
           </div>
         </div>
       </div>
@@ -725,6 +766,7 @@
     btn.classList.add('active');
     if (name === 'beacons') loadBeacons();
     if (name === 'map') loadMap();
+    if (name === 'graph') loadGraph();
     if (name === 'api') updateSwaggerLink();
   }
 
@@ -1055,8 +1097,222 @@
     }
   }
 
+  // ═══════════════════════════════════════════════════════
+  //  ГРАФ НАВИГАЦИИ — визуализация + редактор + диагностика
+  // ═══════════════════════════════════════════════════════
+  const G_SCALE = 32, G_PAD = 24;
+  let graphMode = 'view';
+  let graphData = { plan: null, nodes: [], edges: [] };
+  let connectFrom = null;
+
+  function graphFloorVal() {
+    return parseInt(document.getElementById('graphFloor').value) || 1;
+  }
+
+  function setGraphMode(m) {
+    graphMode = m;
+    connectFrom = null;
+    ['view', 'add', 'connect', 'delete'].forEach(k => {
+      const b = document.getElementById('gmode-' + k);
+      if (b) b.className = 'btn ' + (k === m ? 'btn-primary' : 'btn-ghost');
+    });
+    const hints = {
+      view: 'Просмотр графа',
+      add: 'Кликните по плану, чтобы поставить узел',
+      connect: 'Кликните два узла, чтобы создать ребро',
+      delete: 'Кликните узел или ребро, чтобы удалить',
+    };
+    document.getElementById('graphHint').textContent = hints[m] || '';
+    renderGraph();
+  }
+
+  async function loadGraph() {
+    const floor = graphFloorVal();
+    document.getElementById('graphContent').innerHTML =
+      '<div class="loading"><div class="spinner"></div> Загрузка графа...</div>';
+    try {
+      const [planR, nodesR, edgesR, diagR] = await Promise.all([
+        fetch(getApiUrl() + '/map/' + floor),
+        fetch(getApiUrl() + '/route/nodes/?floor=' + floor),
+        fetch(getApiUrl() + '/route/edges/'),
+        fetch(getApiUrl() + '/route/diagnostics/?floor=' + floor),
+      ]);
+      graphData.plan  = await planR.json();
+      graphData.nodes = await nodesR.json();
+      const allEdges  = await edgesR.json();
+      graphData.diag  = await diagR.json();
+      // Рёбра только между узлами этого этажа
+      const ids = new Set(graphData.nodes.map(n => n.id));
+      graphData.edges = allEdges.filter(e => ids.has(e.from_id) && ids.has(e.to_id));
+      renderGraph();
+      renderDiag();
+    } catch (e) {
+      document.getElementById('graphContent').innerHTML =
+        '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Не удалось загрузить граф</div></div>';
+    }
+  }
+
+  function renderDiag() {
+    const d = graphData.diag;
+    if (!d) { document.getElementById('graphDiag').innerHTML = ''; return; }
+    let cls, icon, text;
+    if (d.isolated.length > 0) {
+      cls = 'var(--danger)'; icon = '⚠️';
+      text = `Изолированные узлы (${d.isolated.length}): ${d.isolated.join(', ')}`;
+    } else if (!d.connected) {
+      cls = 'var(--warning)'; icon = '⚠️';
+      text = `Граф не связный: ${d.components.length} групп — между ними нет пути`;
+    } else {
+      cls = 'var(--success)'; icon = '✓';
+      text = 'Граф связный — маршрут строится между любыми узлами';
+    }
+    document.getElementById('graphDiag').innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;
+                  background:var(--surface);border:1px solid var(--border);border-left:3px solid ${cls}">
+        <span style="font-size:16px">${icon}</span>
+        <span style="font-size:13px;color:var(--text)">${text}</span>
+        <span style="margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--text3)">
+          ${d.nodes} узлов · ${d.edges} рёбер · ${d.components.length} групп</span>
+      </div>`;
+  }
+
+  function renderGraph() {
+    const plan = graphData.plan;
+    if (!plan) return;
+    const W = plan.width * G_SCALE, H = plan.height * G_SCALE;
+    const svgW = W + G_PAD * 2, svgH = H + G_PAD * 2;
+    const px = x => G_PAD + x * G_SCALE;
+    const py = y => G_PAD + y * G_SCALE;
+    const isolated = new Set((graphData.diag && graphData.diag.isolated) || []);
+    const byId = {};
+    graphData.nodes.forEach(n => byId[n.id] = n);
+
+    const roomsSVG = (plan.rooms || []).map(r => `
+      <rect x="${px(r.x)}" y="${py(r.y)}" width="${r.w*G_SCALE}" height="${r.h*G_SCALE}"
+            fill="rgba(255,255,255,0.03)"/>
+      <text x="${px(r.x + r.w/2)}" y="${py(r.y + r.h/2)}" text-anchor="middle"
+            dominant-baseline="middle" font-size="11" fill="rgba(139,144,160,0.5)"
+            font-family="Onest,sans-serif">${r.name}</text>`).join('');
+
+    const wallsSVG = (plan.walls || []).map(w => `
+      <line x1="${px(w.x1)}" y1="${py(w.y1)}" x2="${px(w.x2)}" y2="${py(w.y2)}"
+            stroke="#e8eaf0" stroke-width="2"/>`).join('');
+
+    // Рёбра (видимая линия + широкая прозрачная для клика)
+    const edgesSVG = graphData.edges.map(e => {
+      const a = byId[e.from_id], b = byId[e.to_id];
+      if (!a || !b) return '';
+      return `
+        <line x1="${px(a.x)}" y1="${py(a.y)}" x2="${px(b.x)}" y2="${py(b.y)}"
+              stroke="#7c3aed" stroke-width="2.5"/>
+        <line x1="${px(a.x)}" y1="${py(a.y)}" x2="${px(b.x)}" y2="${py(b.y)}"
+              stroke="transparent" stroke-width="14" style="cursor:pointer"
+              onclick="onEdgeClick(event, ${e.id})"/>
+        <text x="${px((a.x+b.x)/2)}" y="${py((a.y+b.y)/2) - 4}" text-anchor="middle"
+              font-size="9" fill="rgba(124,58,237,0.7)"
+              font-family="JetBrains Mono,monospace">${e.weight}</text>`;
+    }).join('');
+
+    // Узлы
+    const nodesSVG = graphData.nodes.map(n => {
+      const sel = connectFrom === n.id;
+      const fill = isolated.has(n.id) ? '#ef4444' : '#4f8ef7';
+      const ring = sel ? '<circle cx="'+px(n.x)+'" cy="'+py(n.y)+'" r="12" fill="none" stroke="#22c55e" stroke-width="2"/>' : '';
+      return `
+        ${ring}
+        <circle cx="${px(n.x)}" cy="${py(n.y)}" r="8" fill="${fill}"
+                stroke="#0d0f14" stroke-width="2" style="cursor:pointer"
+                onclick="onNodeClick(event, '${n.id}')"/>
+        <text x="${px(n.x)}" y="${py(n.y) - 13}" text-anchor="middle" font-size="10"
+              fill="#e8eaf0" font-family="JetBrains Mono,monospace"
+              style="pointer-events:none">${n.name}</text>`;
+    }).join('');
+
+    document.getElementById('graphContent').innerHTML = `
+      <div style="overflow:auto;background:var(--surface2);border-radius:10px;padding:8px;display:inline-block">
+        <svg id="graphSvg" width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="${G_PAD}" y="${G_PAD}" width="${W}" height="${H}"
+                fill="rgba(255,255,255,0.02)" stroke="#e8eaf0" stroke-width="3"
+                style="${graphMode==='add' ? 'cursor:crosshair' : ''}"
+                onclick="onCanvasClick(event)"/>
+          ${roomsSVG}${wallsSVG}${edgesSVG}${nodesSVG}
+        </svg>
+      </div>`;
+  }
+
+  function svgCoords(evt) {
+    const svg = document.getElementById('graphSvg');
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX; pt.y = evt.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return { x: (loc.x - G_PAD) / G_SCALE, y: (loc.y - G_PAD) / G_SCALE };
+  }
+
+  async function onCanvasClick(evt) {
+    if (graphMode !== 'add') return;
+    const { x, y } = svgCoords(evt);
+    const id = prompt('ID узла (латиницей, напр. corr_b):');
+    if (!id) return;
+    const name = prompt('Название узла:', id) || id;
+    await apiSend('POST', '/route/nodes/', {
+      id, name, x: +x.toFixed(2), y: +y.toFixed(2), floor: graphFloorVal()
+    }, `Узел "${name}" добавлен`);
+  }
+
+  async function onNodeClick(evt, id) {
+    evt.stopPropagation();
+    if (graphMode === 'delete') {
+      if (!confirm(`Удалить узел "${id}" и его рёбра?`)) return;
+      await apiSend('DELETE', '/route/nodes/' + id, null, `Узел "${id}" удалён`);
+    } else if (graphMode === 'connect') {
+      if (!connectFrom) {
+        connectFrom = id;
+        document.getElementById('graphHint').textContent = `Первый: ${id}. Кликните второй узел`;
+        renderGraph();
+      } else if (connectFrom === id) {
+        connectFrom = null; setGraphMode('connect');
+      } else {
+        await apiSend('POST', '/route/edges/',
+          { from_id: connectFrom, to_id: id }, `Ребро ${connectFrom} ↔ ${id} создано`);
+        connectFrom = null;
+      }
+    } else {
+      const n = graphData.nodes.find(x => x.id === id);
+      if (n) showToast('success', `${n.name} (${n.id}): ${n.x}, ${n.y}`);
+    }
+  }
+
+  async function onEdgeClick(evt, edgeId) {
+    evt.stopPropagation();
+    if (graphMode !== 'delete') return;
+    if (!confirm('Удалить ребро?')) return;
+    await apiSend('DELETE', '/route/edges/' + edgeId, null, 'Ребро удалено');
+  }
+
+  // Универсальная отправка + перезагрузка графа
+  async function apiSend(method, path, body, okMsg) {
+    try {
+      const opts = { method };
+      if (body) {
+        opts.headers = { 'Content-Type': 'application/json' };
+        opts.body = JSON.stringify(body);
+      }
+      const r = await fetch(getApiUrl() + path, opts);
+      if (r.ok) {
+        showToast('success', '✓ ' + okMsg);
+        await loadGraph();
+      } else {
+        const err = await r.json().catch(() => ({}));
+        showToast('error', '✗ ' + (err.detail || 'Ошибка ' + r.status));
+      }
+    } catch {
+      showToast('error', '✗ Нет соединения с API');
+    }
+  }
+
   // Старт: берём текущий origin, убирая /admin
   document.getElementById('apiUrl').value = window.location.origin;
+  setGraphMode('view');
   checkStatus();
 </script>
 </body>

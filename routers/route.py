@@ -1,4 +1,5 @@
 import math
+import networkx as nx
 from fastapi import APIRouter, HTTPException
 from database import db_session
 from models import (
@@ -7,6 +8,32 @@ from models import (
 from pathfinding import build_graph, find_route
 
 router = APIRouter(prefix="/route", tags=["route"])
+
+
+@router.get("/diagnostics/")
+def graph_diagnostics(floor: int = 1):
+    """
+    Диагностика связности графа этажа: изолированные узлы и компоненты связности.
+
+    Помогает находить «дыры» — узлы без рёбер и несвязанные между собой группы,
+    из-за которых маршрут между некоторыми точками построить нельзя.
+    """
+    with db_session() as conn:
+        nodes = [dict(r) for r in conn.execute(
+            "SELECT * FROM nodes WHERE floor=?", (floor,)).fetchall()]
+        edges = [dict(r) for r in conn.execute("SELECT * FROM edges").fetchall()]
+
+    G = build_graph(nodes, edges)  # рёбра добавятся только между узлами этажа
+    isolated = sorted(n for n in G.nodes if G.degree(n) == 0)
+    components = sorted((sorted(c) for c in nx.connected_components(G)), key=len, reverse=True)
+    return {
+        "floor": floor,
+        "nodes": G.number_of_nodes(),
+        "edges": G.number_of_edges(),
+        "isolated": isolated,
+        "components": components,
+        "connected": len(components) <= 1,
+    }
 
 @router.get("/nodes/", response_model=list[NodeOut])
 def get_nodes(floor: int = 1):
