@@ -50,9 +50,20 @@ class RouteRequest(BaseModel):
     to_node:   str
     floor:     int = 1
 
+class RoutePointRequest(BaseModel):
+    """Маршрут от произвольной точки (реальной позиции) до узла."""
+    x:       float
+    y:       float
+    to_node: str
+    floor:   int = 1
+
 class RouteOut(BaseModel):
     nodes:          list[str]
     total_distance: float
+    # Реальная стартовая точка (если маршрут строился от координат, а не узла).
+    # Клиент рисует первый сегмент от неё к первому узлу — без «прыжка» к графу.
+    start_x: Optional[float] = None
+    start_y: Optional[float] = None
 
 class NodeOut(BaseModel):
     id:    str

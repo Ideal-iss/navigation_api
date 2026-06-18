@@ -3,9 +3,14 @@ import networkx as nx
 from fastapi import APIRouter, HTTPException
 from database import db_session
 from models import (
-    RouteRequest, RouteOut, NodeOut, NodeCreate, NodeUpdate, EdgeCreate, EdgeOut,
+    RouteRequest, RoutePointRequest, RouteOut, NodeOut, NodeCreate, NodeUpdate,
+    EdgeCreate, EdgeOut,
 )
 from pathfinding import build_graph, find_route
+
+# Сколько ближайших узлов графа подключать к виртуальной стартовой точке.
+VIRTUAL_LINKS = 3
+VIRTUAL_ID = "__start__"
 
 router = APIRouter(prefix="/route", tags=["route"])
 
@@ -141,3 +146,49 @@ def get_route(req: RouteRequest):
         raise HTTPException(400, str(e))
 
     return RouteOut(nodes=path, total_distance=round(dist, 2))
+
+
+@router.post("/from-point/", response_model=RouteOut)
+def get_route_from_point(req: RoutePointRequest):
+    """
+    Маршрут от произвольной точки (реальной позиции пользователя) до узла.
+
+    В граф добавляется временный виртуальный узел в точке (x, y), соединённый
+    с несколькими ближайшими узлами этажа (вес = расстояние). A* строит путь
+    от него, в ответе возвращается start_x/start_y — чтобы клиент нарисовал
+    первый сегмент прямо от позиции, без «прыжка» к ближайшему узлу графа.
+    """
+    with db_session() as conn:
+        all_nodes = conn.execute("SELECT * FROM nodes").fetchall()
+        edges = conn.execute("SELECT * FROM edges").fetchall()
+
+    G = build_graph(all_nodes, edges)
+
+    # Кандидаты для подключения — узлы того же этажа, присутствующие в графе.
+    floor_ids = [n["id"] for n in all_nodes if n["floor"] == req.floor and n["id"] in G]
+    if not floor_ids:
+        raise HTTPException(404, "Граф для этого этажа не найден")
+    if req.to_node not in G:
+        raise HTTPException(400, f"Узел '{req.to_node}' не найден в графе")
+
+    def dist_to(nid: str) -> float:
+        a = G.nodes[nid]
+        return math.hypot(a["x"] - req.x, a["y"] - req.y)
+
+    nearest = sorted(floor_ids, key=dist_to)[:VIRTUAL_LINKS]
+    G.add_node(VIRTUAL_ID, x=req.x, y=req.y, name="start", floor=req.floor)
+    for nid in nearest:
+        G.add_edge(VIRTUAL_ID, nid, weight=round(dist_to(nid), 2))
+
+    try:
+        path, dist = find_route(G, VIRTUAL_ID, req.to_node)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+    real_path = [p for p in path if p != VIRTUAL_ID]  # виртуальный узел клиенту не нужен
+    return RouteOut(
+        nodes=real_path,
+        total_distance=round(dist, 2),
+        start_x=req.x,
+        start_y=req.y,
+    )
