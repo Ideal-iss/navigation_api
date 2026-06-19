@@ -1,0 +1,18 @@
+<!-- @dsCard group="Оверлеи" name="Modal" subtitle="форма редактирования" -->
+<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><link rel="stylesheet" href="styles.css">
+<style>body{padding:24px;display:flex;justify-content:center}</style></head>
+<body>
+<div class="modal">
+  <div class="modal-title">✏️ Редактировать маячок</div>
+  <div style="margin-bottom:16px"><label class="form-label">Название места</label>
+    <input class="form-input" value="Маячок (верх)"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div><label class="form-label">X (м)</label><input class="form-input" value="10.75"></div>
+    <div><label class="form-label">Y (м)</label><input class="form-input" value="0.0"></div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost">Отмена</button>
+    <button class="btn btn-primary">💾 Сохранить</button>
+  </div>
+</div>
+</body></html>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IndoorNav Admin — Design System</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  body{padding:40px 24px;font-family:var(--sans)}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{font-size:24px;font-weight:600;letter-spacing:-.5px}
+  .sub{color:var(--text2);font-size:14px;margin:4px 0 28px}
+  h2{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);
+     font-family:var(--mono);margin:30px 0 12px}
+  .tokens{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px}
+  .tk{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface)}
+  .tk .c{height:48px}
+  .tk .m{padding:6px 9px;font-size:11px}
+  .tk .nm{font-weight:600}
+  .tk .hx{font-family:var(--mono);color:var(--text2);font-size:10px}
+  .frame{width:100%;border:1px solid var(--border);border-radius:12px;background:var(--bg);margin-bottom:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>IndoorNav Admin — Design System</h1>
+  <div class="sub">Компоненты панели администратора. Токены и классы вынесены из <span style="font-family:var(--mono)">admin.html</span> в <span style="font-family:var(--mono)">styles.css</span>.</div>
+
+  <h2>Токены</h2>
+  <div class="tokens">
+    <div class="tk"><div class="c" style="background:#0d0f14"></div><div class="m"><div class="nm">bg</div><div class="hx">#0d0f14</div></div></div>
+    <div class="tk"><div class="c" style="background:#13161e"></div><div class="m"><div class="nm">surface</div><div class="hx">#13161e</div></div></div>
+    <div class="tk"><div class="c" style="background:#1a1e2a"></div><div class="m"><div class="nm">surface2</div><div class="hx">#1a1e2a</div></div></div>
+    <div class="tk"><div class="c" style="background:#252a38"></div><div class="m"><div class="nm">border</div><div class="hx">#252a38</div></div></div>
+    <div class="tk"><div class="c" style="background:#4f8ef7"></div><div class="m"><div class="nm">accent</div><div class="hx">#4f8ef7</div></div></div>
+    <div class="tk"><div class="c" style="background:#7c3aed"></div><div class="m"><div class="nm">accent2</div><div class="hx">#7c3aed</div></div></div>
+    <div class="tk"><div class="c" style="background:#22c55e"></div><div class="m"><div class="nm">success</div><div class="hx">#22c55e</div></div></div>
+    <div class="tk"><div class="c" style="background:#f59e0b"></div><div class="m"><div class="nm">warning</div><div class="hx">#f59e0b</div></div></div>
+    <div class="tk"><div class="c" style="background:#ef4444"></div><div class="m"><div class="nm">danger</div><div class="hx">#ef4444</div></div></div>
+  </div>
+
+  <h2>Кнопки</h2>          <iframe class="frame" src="buttons.html" height="90"></iframe>
+  <h2>Бейджи и статус</h2> <iframe class="frame" src="badges.html" height="100"></iframe>
+  <h2>Карточки метрик</h2> <iframe class="frame" src="stat-cards.html" height="130"></iframe>
+  <h2>Таблица</h2>         <iframe class="frame" src="table.html" height="220"></iframe>
+  <h2>Поля ввода</h2>      <iframe class="frame" src="inputs.html" height="220"></iframe>
+  <h2>Модальное окно</h2>  <iframe class="frame" src="modal.html" height="320"></iframe>
+  <h2>Уведомления</h2>     <iframe class="frame" src="feedback.html" height="130"></iframe>
+  <h2>Редактор графа</h2>  <iframe class="frame" src="graph-toolbar.html" height="220"></iframe>
+</div>
+</body>
+</html>

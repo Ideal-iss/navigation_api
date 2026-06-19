@@ -1,0 +1,18 @@
+<!-- @dsCard group="Редактор графа" name="Graph toolbar" subtitle="режимы + переключатель этажей" -->
+<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><link rel="stylesheet" href="styles.css">
+<style>body{padding:24px;display:flex;flex-direction:column;gap:20px;align-items:flex-start}</style></head>
+<body>
+<div class="api-bar" style="gap:8px;flex-wrap:wrap">
+  <label>Режим</label>
+  <button class="btn btn-primary">👁 Просмотр</button>
+  <button class="btn btn-ghost">➕ Узел</button>
+  <button class="btn btn-ghost">🔗 Связать</button>
+  <button class="btn btn-ghost">🗑️ Удалить</button>
+</div>
+<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;
+            background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--success)">
+  <span>✓</span><span style="font-size:13px">Граф связный — маршрут строится между любыми узлами</span>
+  <span style="margin-left:12px;font-family:var(--mono);font-size:12px;color:var(--text3)">7 узлов · 8 рёбер</span>
+</div>
+<div class="floors"><div class="f">2</div><div class="f on">1</div></div>
+</body></html>
