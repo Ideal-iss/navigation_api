@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from database import db_session
 from models import PositionRequest, PositionOut
 from positioning import estimate_position, DEFAULT_PATH_LOSS_N
+from routers.analytics import record_position
 
 router = APIRouter(prefix="/position", tags=["position"])
 
@@ -44,5 +45,16 @@ def get_position(req: PositionRequest):
     )
     if result is None:
         raise HTTPException(404, "Маячки не найдены в базе данных")
+
+    # Пишем в историю асинхронно (не блокируем ответ)
+    try:
+        record_position(
+            session_id=req.session_id,
+            x=result["x"], y=result["y"],
+            floor=result["floor"], accuracy=result["accuracy"],
+            method=result.get("method"),
+        )
+    except Exception:
+        pass  # запись истории не должна ломать позиционирование
 
     return PositionOut(**result)

@@ -547,6 +547,9 @@
       <span class="icon">🕸️</span> Граф
     </button>
     <div class="nav-label" style="margin-top:12px">Система</div>
+    <button class="nav-item" onclick="showPage('analytics', this)">
+      <span class="icon">📊</span> Аналитика
+    </button>
     <button class="nav-item" onclick="showPage('api', this)">
       <span class="icon">⚡</span> API
     </button>
@@ -559,6 +562,11 @@
       <label>API</label>
       <input type="text" id="apiUrl" value="" oninput="checkStatus()">
       <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="checkStatus()">Проверить</button>
+      <label style="margin-left:12px">ADMIN KEY</label>
+      <input type="password" id="adminKey" placeholder="changeme"
+             style="width:130px;background:none;border:none;outline:none;font-family:var(--mono);font-size:13px;color:var(--text)"
+             value=""
+             oninput="localStorage.setItem('adminKey', this.value)">
     </div>
 
     <!-- Страница: Маячки -->
@@ -637,6 +645,18 @@
         </div>
       </div>
 
+      <!-- Загрузка фонового изображения плана -->
+      <div class="api-bar" style="gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <label>ФОТО ПЛАНА</label>
+        <input type="file" id="planImageFile" accept=".png,.jpg,.jpeg,.svg,.webp"
+               style="font-size:12px;color:var(--text2)">
+        <button class="btn btn-ghost" style="padding:5px 14px;font-size:12px"
+                onclick="uploadPlanImage()">Загрузить</button>
+        <button class="btn btn-ghost" style="padding:5px 14px;font-size:12px"
+                onclick="togglePlanImage()">Скрыть/Показать фон</button>
+        <span id="planImgStatus" style="font-size:11px;font-family:var(--mono);color:var(--text3)"></span>
+      </div>
+
       <!-- Панель инструментов редактора -->
       <div class="api-bar" style="gap:8px;flex-wrap:wrap">
         <label>РЕЖИМ</label>
@@ -655,6 +675,38 @@
           <div class="empty">
             <div class="empty-icon">🕸️</div>
             <div class="empty-text">Нажмите "Загрузить" для построения графа</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Страница: Аналитика -->
+    <div class="page" id="page-analytics">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Аналитика перемещений</div>
+          <div class="page-subtitle">История позиций и горячие зоны</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="clearHistory()" style="color:var(--danger)">🗑 Очистить</button>
+          <button class="btn btn-primary" onclick="loadAnalytics()">↻ Обновить</button>
+        </div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Всего записей</div>
+          <div class="stat-value blue" id="anTotal">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Сессий (1ч)</div>
+          <div class="stat-value green" id="anSessions">—</div>
+        </div>
+      </div>
+      <div class="table-wrap" style="padding:24px">
+        <div id="analyticsContent">
+          <div class="empty">
+            <div class="empty-icon">📊</div>
+            <div class="empty-text">Нажмите "Обновить" для загрузки данных</div>
           </div>
         </div>
       </div>
@@ -1289,12 +1341,17 @@
     await apiSend('DELETE', '/route/edges/' + edgeId, null, 'Ребро удалено');
   }
 
+  // ── Ключ администратора ───────────────────────────────────
+  function getAdminKey() {
+    return document.getElementById('adminKey').value || localStorage.getItem('adminKey') || 'changeme';
+  }
+
   // Универсальная отправка + перезагрузка графа
   async function apiSend(method, path, body, okMsg) {
     try {
-      const opts = { method };
+      const opts = { method, headers: { 'x-admin-key': getAdminKey() } };
       if (body) {
-        opts.headers = { 'Content-Type': 'application/json' };
+        opts.headers['Content-Type'] = 'application/json';
         opts.body = JSON.stringify(body);
       }
       const r = await fetch(getApiUrl() + path, opts);
@@ -1310,8 +1367,200 @@
     }
   }
 
+  // ── Фоновое изображение плана ─────────────────────────────
+  let planImageUrl = null;
+  let planImageVisible = true;
+
+  async function uploadPlanImage() {
+    const file = document.getElementById('planImageFile').files[0];
+    if (!file) { showToast('error', 'Выберите файл'); return; }
+    const floor = graphFloorVal();
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const r = await fetch(getApiUrl() + '/admin/floor-plan/' + floor + '/image', {
+        method: 'POST',
+        headers: { 'x-admin-key': getAdminKey() },
+        body: fd,
+      });
+      if (r.ok) {
+        planImageUrl = getApiUrl() + '/admin/floor-plan/' + floor + '/image?' + Date.now();
+        planImageVisible = true;
+        document.getElementById('planImgStatus').textContent = '✓ ' + file.name;
+        showToast('success', 'Изображение загружено');
+        renderGraph();
+      } else {
+        const e = await r.json().catch(() => ({}));
+        showToast('error', '✗ ' + (e.detail || r.status));
+      }
+    } catch { showToast('error', '✗ Ошибка загрузки'); }
+  }
+
+  function togglePlanImage() {
+    planImageVisible = !planImageVisible;
+    renderGraph();
+  }
+
+  // Подгружаем изображение при смене этажа (если было загружено ранее)
+  async function tryLoadExistingImage() {
+    const floor = graphFloorVal();
+    const url = getApiUrl() + '/admin/floor-plan/' + floor + '/image?' + Date.now();
+    const r = await fetch(url).catch(() => null);
+    if (r && r.ok) { planImageUrl = url; planImageVisible = true; }
+    else planImageUrl = null;
+  }
+
+  async function loadGraph() {
+    await tryLoadExistingImage();
+    const floor = graphFloorVal();
+    document.getElementById('graphContent').innerHTML =
+      '<div class="loading"><div class="spinner"></div> Загрузка графа...</div>';
+    try {
+      const [planR, nodesR, edgesR, diagR] = await Promise.all([
+        fetch(getApiUrl() + '/map/' + floor),
+        fetch(getApiUrl() + '/route/nodes/?floor=' + floor),
+        fetch(getApiUrl() + '/route/edges/'),
+        fetch(getApiUrl() + '/route/diagnostics/?floor=' + floor),
+      ]);
+      graphData.plan  = await planR.json();
+      graphData.nodes = await nodesR.json();
+      const allEdges  = await edgesR.json();
+      graphData.diag  = await diagR.json();
+      const ids = new Set(graphData.nodes.map(n => n.id));
+      graphData.edges = allEdges.filter(e => ids.has(e.from_id) && ids.has(e.to_id));
+      renderGraph();
+      renderDiag();
+    } catch (e) {
+      document.getElementById('graphContent').innerHTML =
+        '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Не удалось загрузить граф</div></div>';
+    }
+  }
+
+  function renderGraph() {
+    const plan = graphData.plan;
+    if (!plan) return;
+    const W = plan.width * G_SCALE, H = plan.height * G_SCALE;
+    const svgW = W + G_PAD * 2, svgH = H + G_PAD * 2;
+    const px = x => G_PAD + x * G_SCALE;
+    const py = y => G_PAD + y * G_SCALE;
+    const isolated = new Set((graphData.diag && graphData.diag.isolated) || []);
+    const byId = {};
+    graphData.nodes.forEach(n => byId[n.id] = n);
+
+    const bgImageSVG = (planImageUrl && planImageVisible)
+      ? `<image href="${planImageUrl}" x="${G_PAD}" y="${G_PAD}" width="${W}" height="${H}"
+               preserveAspectRatio="xMidYMid meet" opacity="0.45"/>`
+      : '';
+
+    const roomsSVG = (plan.rooms || []).map(r => `
+      <rect x="${px(r.x)}" y="${py(r.y)}" width="${r.w*G_SCALE}" height="${r.h*G_SCALE}"
+            fill="${planImageUrl && planImageVisible ? 'none' : 'rgba(255,255,255,0.03)'}"/>
+      <text x="${px(r.x + r.w/2)}" y="${py(r.y + r.h/2)}" text-anchor="middle"
+            dominant-baseline="middle" font-size="11" fill="rgba(139,144,160,0.5)"
+            font-family="Onest,sans-serif">${r.name}</text>`).join('');
+
+    const wallsSVG = (plan.walls || []).map(w => `
+      <line x1="${px(w.x1)}" y1="${py(w.y1)}" x2="${px(w.x2)}" y2="${py(w.y2)}"
+            stroke="#e8eaf0" stroke-width="2"/>`).join('');
+
+    const edgesSVG = graphData.edges.map(e => {
+      const a = byId[e.from_id], b = byId[e.to_id];
+      if (!a || !b) return '';
+      return `
+        <line x1="${px(a.x)}" y1="${py(a.y)}" x2="${px(b.x)}" y2="${py(b.y)}"
+              stroke="#7c3aed" stroke-width="2.5"/>
+        <line x1="${px(a.x)}" y1="${py(a.y)}" x2="${px(b.x)}" y2="${py(b.y)}"
+              stroke="transparent" stroke-width="14" style="cursor:pointer"
+              onclick="onEdgeClick(event, ${e.id})"/>
+        <text x="${px((a.x+b.x)/2)}" y="${py((a.y+b.y)/2) - 4}" text-anchor="middle"
+              font-size="9" fill="rgba(124,58,237,0.7)"
+              font-family="JetBrains Mono,monospace">${e.weight}</text>`;
+    }).join('');
+
+    const nodesSVG = graphData.nodes.map(n => {
+      const sel = connectFrom === n.id;
+      const fill = isolated.has(n.id) ? '#ef4444' : '#4f8ef7';
+      const ring = sel ? '<circle cx="'+px(n.x)+'" cy="'+py(n.y)+'" r="12" fill="none" stroke="#22c55e" stroke-width="2"/>' : '';
+      return `
+        ${ring}
+        <circle cx="${px(n.x)}" cy="${py(n.y)}" r="8" fill="${fill}"
+                stroke="#0d0f14" stroke-width="2" style="cursor:pointer"
+                onclick="onNodeClick(event, '${n.id}')"/>
+        <text x="${px(n.x)}" y="${py(n.y) - 13}" text-anchor="middle" font-size="10"
+              fill="#e8eaf0" font-family="JetBrains Mono,monospace"
+              style="pointer-events:none">${n.name}</text>`;
+    }).join('');
+
+    document.getElementById('graphContent').innerHTML = `
+      <div style="overflow:auto;background:var(--surface2);border-radius:10px;padding:8px;display:inline-block">
+        <svg id="graphSvg" width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="${G_PAD}" y="${G_PAD}" width="${W}" height="${H}"
+                fill="rgba(255,255,255,0.02)" stroke="#e8eaf0" stroke-width="3"
+                style="${graphMode==='add' ? 'cursor:crosshair' : ''}"
+                onclick="onCanvasClick(event)"/>
+          ${bgImageSVG}${roomsSVG}${wallsSVG}${edgesSVG}${nodesSVG}
+        </svg>
+      </div>`;
+  }
+
+  // ── Аналитика ─────────────────────────────────────────────
+  async function loadAnalytics() {
+    document.getElementById('analyticsContent').innerHTML =
+      '<div class="loading"><div class="spinner"></div> Загрузка...</div>';
+    try {
+      const [sumR, histR] = await Promise.all([
+        fetch(getApiUrl() + '/analytics/summary/', { headers: { 'x-admin-key': getAdminKey() } }),
+        fetch(getApiUrl() + '/analytics/history/?limit=50', { headers: { 'x-admin-key': getAdminKey() } }),
+      ]);
+      if (!sumR.ok) {
+        document.getElementById('analyticsContent').innerHTML =
+          '<div class="empty"><div class="empty-icon">🔒</div><div class="empty-text">Неверный admin-ключ</div></div>';
+        return;
+      }
+      const sum  = await sumR.json();
+      const hist = await histR.json();
+      document.getElementById('anTotal').textContent    = sum.total_records;
+      document.getElementById('anSessions').textContent = sum.active_sessions_1h;
+
+      const hotspotsHTML = sum.hotspots.map(h =>
+        `<tr><td>${h.gx}–${h.gx+1} / ${h.gy}–${h.gy+1}</td><td>Этаж ${h.floor}</td><td>${h.visits}</td></tr>`
+      ).join('');
+
+      const histHTML = hist.slice(0, 20).map(r =>
+        `<tr><td class="mac-text">${r.session_id ? r.session_id.substring(0,8)+'…' : '—'}</td>
+         <td>(${r.x}, ${r.y})</td><td>${r.floor}</td><td>${r.accuracy}м</td><td>${r.method || '—'}</td></tr>`
+      ).join('');
+
+      document.getElementById('analyticsContent').innerHTML = `
+        <div style="margin-bottom:20px">
+          <div style="font-size:12px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Горячие зоны (топ-5)</div>
+          <table><thead><tr><th>Координаты</th><th>Этаж</th><th>Посещений</th></tr></thead>
+          <tbody>${hotspotsHTML || '<tr><td colspan="3" style="color:var(--text3)">Нет данных</td></tr>'}</tbody></table>
+        </div>
+        <div>
+          <div style="font-size:12px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Последние 20 записей</div>
+          <table><thead><tr><th>Сессия</th><th>Позиция</th><th>Этаж</th><th>Точность</th><th>Метод</th></tr></thead>
+          <tbody>${histHTML || '<tr><td colspan="5" style="color:var(--text3)">Нет данных</td></tr>'}</tbody></table>
+        </div>`;
+    } catch {
+      document.getElementById('analyticsContent').innerHTML =
+        '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Ошибка загрузки</div></div>';
+    }
+  }
+
+  async function clearHistory() {
+    if (!confirm('Очистить всю историю перемещений?')) return;
+    const r = await fetch(getApiUrl() + '/analytics/history/', {
+      method: 'DELETE',
+      headers: { 'x-admin-key': getAdminKey() }
+    });
+    if (r.ok) { showToast('success', 'История очищена'); loadAnalytics(); }
+    else showToast('error', 'Ошибка: ' + r.status);
+  }
+
   // Старт: берём текущий origin, убирая /admin
   document.getElementById('apiUrl').value = window.location.origin;
+  document.getElementById('adminKey').value = localStorage.getItem('adminKey') || '';
   setGraphMode('view');
   checkStatus();
 </script>

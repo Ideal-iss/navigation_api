@@ -62,6 +62,20 @@ def init_db():
         )
     """)
 
+    # История позиций (для аналитики потоков)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS position_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            x          REAL,
+            y          REAL,
+            floor      INTEGER DEFAULT 1,
+            accuracy   REAL,
+            method     TEXT,
+            ts         REAL DEFAULT (julianday('now') * 86400.0)
+        )
+    """)
+
     conn.commit()
 
     cur.execute("SELECT COUNT(*) FROM beacons")
