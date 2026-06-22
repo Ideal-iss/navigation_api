@@ -66,24 +66,27 @@ class RouteOut(BaseModel):
     start_y: Optional[float] = None
 
 class NodeOut(BaseModel):
-    id:    str
-    name:  str
-    x:     float
-    y:     float
-    floor: int
+    id:      str
+    name:    str
+    x:       float
+    y:       float
+    floor:   int
+    room_id: Optional[int] = None
 
 class NodeCreate(BaseModel):
-    id:    str
-    name:  str
-    x:     float = 0.0
-    y:     float = 0.0
-    floor: int   = 1
+    id:      str
+    name:    str = ""
+    x:       float = 0.0
+    y:       float = 0.0
+    floor:   int   = 1
+    room_id: Optional[int] = None
 
 class NodeUpdate(BaseModel):
-    name:  Optional[str]   = None
-    x:     Optional[float] = None
-    y:     Optional[float] = None
-    floor: Optional[int]   = None
+    name:    Optional[str]   = None
+    x:       Optional[float] = None
+    y:       Optional[float] = None
+    floor:   Optional[int]   = None
+    room_id: Optional[int]   = None
 
 class EdgeCreate(BaseModel):
     from_id: str

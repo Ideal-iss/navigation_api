@@ -2,10 +2,11 @@
 Аналитика перемещений: запись истории позиций и агрегированные отчёты.
 
 Запись происходит автоматически через position.py при каждом успешном
-определении позиции. Эндпоинты чтения требуют admin-ключ.
+определении позиции.
 """
 import os
 import time
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Header
 from database import db_session
 
@@ -19,8 +20,8 @@ def _check_admin(key: str):
         raise HTTPException(status_code=401, detail="Неверный admin-ключ")
 
 
-def record_position(session_id: str | None, x: float, y: float,
-                    floor: int, accuracy: float, method: str | None):
+def record_position(session_id: Optional[str], x: float, y: float,
+                    floor: int, accuracy: float, method: Optional[str]):
     """Вызывается из position.py после успешного позиционирования."""
     with db_session() as conn:
         conn.execute(
@@ -35,7 +36,7 @@ def record_position(session_id: str | None, x: float, y: float,
 
 @router.get("/history/")
 def get_history(
-    floor: int | None = None,
+    floor: Optional[int] = None,
     limit: int = 200,
     x_admin_key: str = Header(default=""),
 ):

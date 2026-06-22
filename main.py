@@ -3,8 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Header, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from database import init_db, reset_graph, db_session
-from routers import beacons, map, route, position
-from routers import analytics
+from routers import beacons, map, route, position, floors, rooms
 from fastapi.responses import FileResponse
 
 ADMIN_KEY = os.getenv("ADMIN_KEY", "changeme")
@@ -35,7 +34,8 @@ app.include_router(beacons.router)
 app.include_router(map.router)
 app.include_router(route.router)
 app.include_router(position.router)
-app.include_router(analytics.router)
+app.include_router(floors.router)
+app.include_router(rooms.router)
 
 @app.post("/admin/reset-graph")
 def admin_reset_graph(x_admin_key: str = Header(default="")):

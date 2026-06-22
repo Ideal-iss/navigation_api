@@ -3,34 +3,40 @@ import networkx as nx
 from fastapi import APIRouter, HTTPException
 from database import db_session
 from models import (
-    RouteRequest, RoutePointRequest, RouteOut, NodeOut, NodeCreate, NodeUpdate,
-    EdgeCreate, EdgeOut,
+    RouteRequest, RoutePointRequest, RouteOut,
+    NodeOut, NodeCreate, NodeUpdate, EdgeCreate, EdgeOut,
 )
 from pathfinding import build_graph, find_route
 
-# Сколько ближайших узлов графа подключать к виртуальной стартовой точке.
 VIRTUAL_LINKS = 3
 VIRTUAL_ID = "__start__"
 
 router = APIRouter(prefix="/route", tags=["route"])
 
+# JOIN rooms so node name falls back to room name, then to node id
+_NODE_SELECT = """
+    SELECT n.id,
+           COALESCE(r.name, n.name, n.id) AS name,
+           n.x, n.y,
+           n.floor_id AS floor,
+           n.room_id
+    FROM nodes n
+    LEFT JOIN rooms r ON r.id = n.room_id
+"""
+
 
 @router.get("/diagnostics/")
 def graph_diagnostics(floor: int = 1):
-    """
-    Диагностика связности графа этажа: изолированные узлы и компоненты связности.
-
-    Помогает находить «дыры» — узлы без рёбер и несвязанные между собой группы,
-    из-за которых маршрут между некоторыми точками построить нельзя.
-    """
     with db_session() as conn:
         nodes = [dict(r) for r in conn.execute(
-            "SELECT * FROM nodes WHERE floor=?", (floor,)).fetchall()]
+            _NODE_SELECT + " WHERE n.floor_id=?", (floor,)).fetchall()]
         edges = [dict(r) for r in conn.execute("SELECT * FROM edges").fetchall()]
 
-    G = build_graph(nodes, edges)  # рёбра добавятся только между узлами этажа
+    G = build_graph(nodes, edges)
     isolated = sorted(n for n in G.nodes if G.degree(n) == 0)
-    components = sorted((sorted(c) for c in nx.connected_components(G)), key=len, reverse=True)
+    components = sorted(
+        (sorted(c) for c in nx.connected_components(G)), key=len, reverse=True
+    )
     return {
         "floor": floor,
         "nodes": G.number_of_nodes(),
@@ -40,13 +46,13 @@ def graph_diagnostics(floor: int = 1):
         "connected": len(components) <= 1,
     }
 
+
 @router.get("/nodes/", response_model=list[NodeOut])
 def get_nodes(floor: int = 1):
     with db_session() as conn:
-        rows = conn.execute("SELECT * FROM nodes WHERE floor=?", (floor,)).fetchall()
+        rows = conn.execute(_NODE_SELECT + " WHERE n.floor_id=?", (floor,)).fetchall()
     return [dict(r) for r in rows]
 
-# ── CRUD узлов графа ─────────────────────────────────────────
 
 @router.post("/nodes/", response_model=NodeOut)
 def create_node(data: NodeCreate):
@@ -55,37 +61,41 @@ def create_node(data: NodeCreate):
         if exists:
             raise HTTPException(409, f"Узел '{data.id}' уже существует")
         conn.execute(
-            "INSERT INTO nodes (id, name, x, y, floor) VALUES (?,?,?,?,?)",
-            (data.id, data.name, data.x, data.y, data.floor),
+            "INSERT INTO nodes (id, name, x, y, floor_id, room_id) VALUES (?,?,?,?,?,?)",
+            (data.id, data.name, data.x, data.y, data.floor, data.room_id),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM nodes WHERE id=?", (data.id,)).fetchone()
+        row = conn.execute(_NODE_SELECT + " WHERE n.id=?", (data.id,)).fetchone()
     return dict(row)
+
 
 @router.patch("/nodes/{node_id}", response_model=NodeOut)
 def update_node(node_id: str, data: NodeUpdate):
-    fields = {k: v for k, v in data.model_dump().items() if v is not None}
-    if not fields:
+    raw = data.model_dump(exclude_unset=True)
+    if not raw:
         raise HTTPException(400, "Нет данных для обновления")
-    sets = ", ".join(f"{k}=?" for k in fields)
+    db_fields = {("floor_id" if k == "floor" else k): v for k, v in raw.items()}
+    sets = ", ".join(f"{k}=?" for k in db_fields)
     with db_session() as conn:
-        conn.execute(f"UPDATE nodes SET {sets} WHERE id=?", (*fields.values(), node_id))
+        conn.execute(
+            f"UPDATE nodes SET {sets} WHERE id=?",
+            (*db_fields.values(), node_id),
+        )
         conn.commit()
-        row = conn.execute("SELECT * FROM nodes WHERE id=?", (node_id,)).fetchone()
+        row = conn.execute(_NODE_SELECT + " WHERE n.id=?", (node_id,)).fetchone()
     if not row:
         raise HTTPException(404, f"Узел '{node_id}' не найден")
     return dict(row)
 
+
 @router.delete("/nodes/{node_id}")
 def delete_node(node_id: str):
     with db_session() as conn:
-        # Удаляем и инцидентные рёбра, чтобы не оставить «висячих» ссылок.
         conn.execute("DELETE FROM edges WHERE from_id=? OR to_id=?", (node_id, node_id))
         conn.execute("DELETE FROM nodes WHERE id=?", (node_id,))
         conn.commit()
     return {"ok": True, "deleted": node_id}
 
-# ── CRUD рёбер графа ─────────────────────────────────────────
 
 @router.get("/edges/", response_model=list[EdgeOut])
 def get_edges():
@@ -93,18 +103,19 @@ def get_edges():
         rows = conn.execute("SELECT * FROM edges").fetchall()
     return [dict(r) for r in rows]
 
+
 @router.post("/edges/", response_model=EdgeOut)
 def create_edge(data: EdgeCreate):
     with db_session() as conn:
         nodes = {
             r["id"]: r for r in conn.execute(
-                "SELECT * FROM nodes WHERE id IN (?,?)", (data.from_id, data.to_id)
+                _NODE_SELECT + " WHERE n.id IN (?,?)", (data.from_id, data.to_id)
             ).fetchall()
         }
         if data.from_id not in nodes or data.to_id not in nodes:
             raise HTTPException(404, "Один из узлов ребра не найден")
         weight = data.weight
-        if weight is None:  # вес по евклидову расстоянию между узлами
+        if weight is None:
             a, b = nodes[data.from_id], nodes[data.to_id]
             weight = round(math.hypot(a["x"] - b["x"], a["y"] - b["y"]), 2)
         cur = conn.execute(
@@ -115,6 +126,7 @@ def create_edge(data: EdgeCreate):
         row = conn.execute("SELECT * FROM edges WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
 
+
 @router.delete("/edges/{edge_id}")
 def delete_edge(edge_id: int):
     with db_session() as conn:
@@ -122,24 +134,20 @@ def delete_edge(edge_id: int):
         conn.commit()
     return {"ok": True, "deleted": edge_id}
 
+
 @router.post("/", response_model=RouteOut)
 def get_route(req: RouteRequest):
-    # Загружаем ВСЕ узлы и рёбра: маршрут может проходить через несколько этажей
-    # (через лестницы/лифты, заданные рёбрами). Раньше брался один этаж, а рёбра —
-    # все подряд, из-за чего рёбра соседних этажей ломали граф.
     with db_session() as conn:
-        all_nodes = conn.execute("SELECT * FROM nodes").fetchall()
+        all_nodes = conn.execute(_NODE_SELECT).fetchall()
         floor_nodes = conn.execute(
-            "SELECT * FROM nodes WHERE floor=?", (req.floor,)
+            _NODE_SELECT + " WHERE n.floor_id=?", (req.floor,)
         ).fetchall()
         edges = conn.execute("SELECT * FROM edges").fetchall()
 
     if not floor_nodes:
         raise HTTPException(404, "Граф для этого этажа не найден")
 
-    # Полный граф (все этажи); build_graph добавит только корректные рёбра.
     G = build_graph(all_nodes, edges)
-
     try:
         path, dist = find_route(G, req.from_node, req.to_node)
     except Exception as e:
@@ -150,21 +158,11 @@ def get_route(req: RouteRequest):
 
 @router.post("/from-point/", response_model=RouteOut)
 def get_route_from_point(req: RoutePointRequest):
-    """
-    Маршрут от произвольной точки (реальной позиции пользователя) до узла.
-
-    В граф добавляется временный виртуальный узел в точке (x, y), соединённый
-    с несколькими ближайшими узлами этажа (вес = расстояние). A* строит путь
-    от него, в ответе возвращается start_x/start_y — чтобы клиент нарисовал
-    первый сегмент прямо от позиции, без «прыжка» к ближайшему узлу графа.
-    """
     with db_session() as conn:
-        all_nodes = conn.execute("SELECT * FROM nodes").fetchall()
+        all_nodes = conn.execute(_NODE_SELECT).fetchall()
         edges = conn.execute("SELECT * FROM edges").fetchall()
 
     G = build_graph(all_nodes, edges)
-
-    # Кандидаты для подключения — узлы того же этажа, присутствующие в графе.
     floor_ids = [n["id"] for n in all_nodes if n["floor"] == req.floor and n["id"] in G]
     if not floor_ids:
         raise HTTPException(404, "Граф для этого этажа не найден")
@@ -185,7 +183,7 @@ def get_route_from_point(req: RoutePointRequest):
     except Exception as e:
         raise HTTPException(400, str(e))
 
-    real_path = [p for p in path if p != VIRTUAL_ID]  # виртуальный узел клиенту не нужен
+    real_path = [p for p in path if p != VIRTUAL_ID]
     return RouteOut(
         nodes=real_path,
         total_distance=round(dist, 2),

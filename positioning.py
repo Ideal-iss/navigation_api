@@ -23,9 +23,11 @@ except Exception:  # pragma: no cover - numpy указан в requirements
 # --- Параметры модели по умолчанию -------------------------------------------
 # n  — показатель затухания среды (free space ~2.0, помещение ~2.5..4.0).
 # RSSI@1m берётся из поля beacon.tx_power (измеренный RSSI на расстоянии 1 м).
-DEFAULT_PATH_LOSS_N = 2.5
-DEFAULT_EMA_ALPHA = 0.4  # вес нового замера; меньше => сильнее сглаживание
-SESSION_TTL = 120.0      # сек: через сколько забываем неактивную сессию
+DEFAULT_PATH_LOSS_N = 2.7          # типичное значение для коридоров/аудиторий
+DEFAULT_EMA_ALPHA   = 0.4          # вес нового замера; меньше => сильнее сглаживание
+SESSION_TTL         = 120.0        # сек: через сколько забываем неактивную сессию
+OUTLIER_SIGMA       = 2.0          # порог отсева: маяк дальше μ + σ*OUTLIER_SIGMA отбрасывается
+MIN_RSSI            = -90.0        # маяки слабее этого уровня игнорируются
 
 # Состояние EMA-фильтра, разделённое ПО СЕССИЯМ: (session_id, minor) -> (rssi, ts).
 # Раньше состояние было глобальным по minor — RSSI разных устройств для одного
@@ -77,21 +79,37 @@ def rssi_to_distance(rssi: float, rssi_at_1m: float,
     return max(10.0 ** exponent, 0.1)
 
 
+def reject_outliers(points: List[Tuple[float, float, float]],
+                    sigma: float = OUTLIER_SIGMA) -> List[Tuple[float, float, float]]:
+    """
+    Удалить маяки, чьё расстояние аномально велико (μ + σ·std).
+
+    При большом разбросе расстояний дальние маяки с нестабильным RSSI
+    «утягивают» позицию в сторону — их лучше выбросить.
+    Если после отсева осталось < 2 точек, возвращаем исходный список.
+    """
+    if len(points) < 3:
+        return points
+    ds = [d for _, _, d in points]
+    mu = sum(ds) / len(ds)
+    std = math.sqrt(sum((d - mu) ** 2 for d in ds) / len(ds))
+    threshold = mu + sigma * std
+    filtered = [p for p in points if p[2] <= threshold]
+    return filtered if len(filtered) >= 2 else points
+
+
 def weighted_centroid(points: List[Tuple[float, float, float]]
                       ) -> Tuple[float, float, float]:
     """
-    Запасной метод (<3 маячков): взвешенный центроид, вес = 1/d^2.
+    Запасной метод (<3 маячков): взвешенный центроид, вес = exp(-d).
 
-    points: список (x, y, distance).
-    Возвращает (x, y, оценка_точности).
+    Экспоненциальный вес сильнее подавляет дальние маяки по сравнению с 1/d²,
+    что даёт более стабильный результат в помещениях.
     """
-    # rssi_to_distance гарантирует d >= 0.1, поэтому деления на ноль не будет,
-    # но total может быть очень мал — на всякий случай защищаемся.
-    weights = [1.0 / (d ** 2) for _, _, d in points]
+    weights = [math.exp(-d) for _, _, d in points]
     total = sum(weights) or 1e-9
     x = sum(w * px for w, (px, _, _) in zip(weights, points)) / total
     y = sum(w * py for w, (_, py, _) in zip(weights, points)) / total
-    # Грубая оценка точности — взвешенное среднее расстояние.
     accuracy = sum(w * d for w, (_, _, d) in zip(weights, points)) / total
     return x, y, accuracy
 
@@ -99,20 +117,23 @@ def weighted_centroid(points: List[Tuple[float, float, float]]
 def multilaterate_lsq(points: List[Tuple[float, float, float]]
                       ) -> Tuple[float, float, float]:
     """
-    Мультилатерация методом наименьших квадратов (>=3 маячков).
+    Взвешенная мультилатерация (WLSQ, >=3 маячков).
 
-    Систему окружностей  (x-xi)^2 + (y-yi)^2 = di^2  линеаризуем, вычитая
-    последнее уравнение из остальных, получаем линейную систему A·p = b,
-    которую решаем через np.linalg.lstsq.
+    Систему окружностей линеаризуем вычитанием опорного уравнения, затем
+    решаем взвешенным МНК: ближние маяки получают больший вес (w = exp(-d)),
+    что снижает влияние дальних нестабильных измерений.
 
-    Возвращает (x, y, оценка_неопределённости_в_метрах).
-    Оценка неопределённости = RMS невязки уравнений окружностей.
+    Возвращает (x, y, RMS_невязки_в_метрах).
     """
     xs = np.array([p[0] for p in points], dtype=float)
     ys = np.array([p[1] for p in points], dtype=float)
     ds = np.array([p[2] for p in points], dtype=float)
 
-    # Опорная точка — маячок с минимальным расстоянием (наиболее надёжный).
+    # Веса: экспоненциальное затухание по расстоянию
+    ws = np.exp(-ds)
+    ws = ws / ws.sum()
+
+    # Опорная точка — ближайший маяк
     ref = int(np.argmin(ds))
     x0, y0, d0 = xs[ref], ys[ref], ds[ref]
 
@@ -124,13 +145,20 @@ def multilaterate_lsq(points: List[Tuple[float, float, float]]
         - (y0 ** 2 - ys[i] ** 2)
         for i in idx
     ])
+    W = np.diag([ws[i] for i in idx])
 
-    sol, *_ = np.linalg.lstsq(A, b, rcond=None)
+    # Взвешенный МНК: (AᵀWA)⁻¹ AᵀWb
+    AtW = A.T @ W
+    lhs = AtW @ A
+    rhs = AtW @ b
+    try:
+        sol = np.linalg.solve(lhs, rhs)
+    except np.linalg.LinAlgError:
+        sol, *_ = np.linalg.lstsq(A, b, rcond=None)
     x, y = float(sol[0]), float(sol[1])
 
-    # Неопределённость: RMS разности |оценка-маячок| и измеренного расстояния.
     est = np.sqrt((xs - x) ** 2 + (ys - y) ** 2)
-    rms = float(np.sqrt(np.mean((est - ds) ** 2)))
+    rms = float(np.sqrt(np.mean(ws * (est - ds) ** 2)))
     return x, y, rms
 
 
@@ -170,6 +198,9 @@ def estimate_position(
         b = by_minor.get(minor)
         if not b:
             continue
+        # Отбрасываем сигналы ниже порога — слишком слабые для надёжной оценки
+        if float(rssi) < MIN_RSSI:
+            continue
         r = smooth_rssi(session_id, minor, rssi, ema_alpha, now) if use_smoothing else float(rssi)
         d = rssi_to_distance(r, b["tx_power"], path_loss_n)
         pts.append((b["x"], b["y"], d, b["floor"]))
@@ -187,6 +218,9 @@ def estimate_position(
     # этажей живут в той же системе координат (x, y) и иначе искажали бы
     # мультилатерацию, «притягивая» решение к чужому этажу.
     xy = [(x, y, d) for (x, y, d, fl) in pts if fl == floor]
+
+    # Отсев выбросов: маяки с аномально большим расстоянием убираем
+    xy = reject_outliers(xy)
 
     if len(xy) >= 3 and _HAS_NUMPY:
         try:
