@@ -203,7 +203,7 @@ def estimate_position(
             continue
         r = smooth_rssi(session_id, minor, rssi, ema_alpha, now) if use_smoothing else float(rssi)
         d = rssi_to_distance(r, b["tx_power"], path_loss_n)
-        pts.append((b["x"], b["y"], d, b["floor"]))
+        pts.append((b["x"], b["y"], d, b["floor_id"]))
 
     if not pts:
         return None  # вызывающий код вернёт 404
