@@ -13,10 +13,10 @@ VIRTUAL_ID = "__start__"
 
 router = APIRouter(prefix="/route", tags=["route"])
 
-# Node name comes from room; fallback to stored name; empty if neither set
+# Name comes ONLY from the linked room; empty string if no room assigned
 _NODE_SELECT = """
     SELECT n.id,
-           COALESCE(r.name, NULLIF(n.name, ''), '') AS name,
+           COALESCE(r.name, '') AS name,
            n.x, n.y,
            n.floor_id AS floor,
            n.room_id
