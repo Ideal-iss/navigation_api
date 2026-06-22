@@ -523,9 +523,8 @@
     <button class="nav-item" id="navGraph" onclick="showPage('graph', this)">
       Граф
     </button>
-    <div class="nav-label" style="margin-top:12px">Система</div>
-    <button class="nav-item" onclick="showPage('api', this)">
-      API
+    <button class="nav-item" onclick="showPage('rooms', this)">
+      Комнаты
     </button>
 
     <div style="margin-top:auto;padding-top:16px;border-top:1px solid var(--sep)">
@@ -683,13 +682,6 @@
       </div>
 
       <!-- Комнаты -->
-      <div class="table-wrap" style="margin-top:20px;padding:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-          <div style="font-weight:600;font-size:15px">Комнаты</div>
-          <button class="btn btn-ghost" onclick="openAddRoom()">+ Добавить</button>
-        </div>
-        <div id="roomsList"></div>
-      </div>
     </div>
 
     <!-- Modal: добавить комнату -->
@@ -732,32 +724,17 @@
       </div>
     </div>
 
-    <!-- Страница: API -->
-    <div class="page" id="page-api">
+    <!-- Страница: Комнаты -->
+    <div class="page" id="page-rooms">
       <div class="page-header">
         <div>
-          <div class="page-title">API Endpoints</div>
-          <div class="page-subtitle">Доступные методы сервера</div>
+          <div class="page-title">Комнаты</div>
+          <div class="page-subtitle">Помещения, привязываемые к узлам графа</div>
         </div>
-        <a href="" id="swaggerLink" target="_blank" class="btn btn-primary">Открыть Swagger ↗</a>
+        <button class="btn btn-primary" onclick="openAddRoom()">+ Добавить</button>
       </div>
       <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Метод</th>
-              <th>Endpoint</th>
-              <th>Описание</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td><span class="badge badge-green">GET</span></td><td class="mac-text">/beacons</td><td>Список всех маячков</td></tr>
-            <tr><td><span class="badge badge-green">GET</span></td><td class="mac-text">/beacons/{minor}</td><td>Данные маячка</td></tr>
-            <tr><td><span class="badge badge-blue">PATCH</span></td><td class="mac-text">/beacons/{minor}</td><td>Обновить данные маячка</td></tr>
-            <tr><td><span class="badge badge-green">GET</span></td><td class="mac-text">/map/{floor}</td><td>План этажа</td></tr>
-            <tr><td><span class="badge badge-blue">POST</span></td><td class="mac-text">/route</td><td>Построить маршрут</td></tr><tr><td><span class="badge badge-green">POST</span></td><td class="mac-text">/beacons//</td><td>Добавить маячок</td></tr><tr><td><span class="badge badge-danger" style="background:rgba(239,68,68,0.12);color:var(--danger)">DELETE</span></td><td class="mac-text">/beacons/{minor}</td><td>Удалить маячок</td></tr>
-          </tbody>
-        </table>
+        <div id="roomsListFull"></div>
       </div>
     </div>
 
@@ -914,7 +891,7 @@
     if (name === 'beacons') loadBeacons();
     if (name === 'map') loadMap();
     if (name === 'graph') loadGraph();
-    if (name === 'api') updateSwaggerLink();
+    if (name === 'rooms') loadRooms();
   }
 
   // Статус API
@@ -1790,23 +1767,23 @@
   }
 
   function renderRoomsList() {
-    const el = document.getElementById('roomsList');
-    if (!el) return;
-    if (!roomsData.length) {
-      el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:4px 0">Комнат нет</div>';
-      return;
-    }
-    el.innerHTML = `<table>
-      <thead><tr><th>Название</th><th>Описание</th><th></th></tr></thead>
-      <tbody>${roomsData.map(r => `
-        <tr>
-          <td>${r.name}</td>
-          <td style="color:var(--text3)">${r.description || '—'}</td>
-          <td style="text-align:right">
-            <button class="btn-icon edit" onclick='openEditRoom(${JSON.stringify(r)})'>✎</button>
-          </td>
-        </tr>`).join('')}
-      </tbody></table>`;
+    const html = !roomsData.length
+      ? '<div style="padding:24px;text-align:center;color:var(--text3)">Комнат нет. Нажмите «+ Добавить».</div>'
+      : `<table>
+          <thead><tr><th>Название</th><th>Описание</th><th></th></tr></thead>
+          <tbody>${roomsData.map(r => `
+            <tr>
+              <td>${r.name}</td>
+              <td style="color:var(--text3)">${r.description || '—'}</td>
+              <td style="text-align:right">
+                <button class="btn-icon edit" onclick='openEditRoom(${JSON.stringify(r)})'>✎</button>
+              </td>
+            </tr>`).join('')}
+          </tbody></table>`;
+    ['roomsList', 'roomsListFull'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = html;
+    });
   }
 
   function populateRoomSelects() {
@@ -1878,6 +1855,7 @@
   setGraphMode('view');
   checkStatus();
   loadFloors();
+  loadRooms();
 </script>
 </body>
 </html>
